@@ -131,15 +131,15 @@ func (boot *ShardBootstrap) StartSyncingBlocks() error {
 		)
 	}
 
-	var ctx context.Context
-	ctx, boot.cancelFunc = context.WithCancel(context.Background())
-
 	err := boot.handleAccountsTrieIteration()
 	if err != nil {
 		return fmt.Errorf("%w while handling accounts trie iteration", err)
 	}
 
-	go boot.syncBlocks(ctx)
+	// JLS: 2024.11.05: do not start block syncer
+	//var ctx context.Context
+	//ctx, boot.cancelFunc = context.WithCancel(context.Background())
+	//go boot.syncBlocks(ctx)
 
 	return nil
 }
