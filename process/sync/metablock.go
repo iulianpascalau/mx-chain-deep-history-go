@@ -146,9 +146,10 @@ func (boot *MetaBootstrap) StartSyncingBlocks() error {
 		boot.setLastEpochStartRound()
 	}
 
-	var ctx context.Context
-	ctx, boot.cancelFunc = context.WithCancel(context.Background())
-	go boot.syncBlocks(ctx)
+	// JLS: 2024.11.05: do not start block syncer
+	//var ctx context.Context
+	//ctx, boot.cancelFunc = context.WithCancel(context.Background())
+	//go boot.syncBlocks(ctx)
 
 	return nil
 }

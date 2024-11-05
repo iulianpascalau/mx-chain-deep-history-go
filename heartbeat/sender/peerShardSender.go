@@ -37,7 +37,7 @@ type peerShardSender struct {
 	timeBetweenSends          time.Duration
 	timeThresholdBetweenSends float64
 	nodesCoordinator          processor.NodesCoordinator
-	cancel                    func()
+	//cancel                    func()
 }
 
 // NewPeerShardSender creates a new instance of peerShardSender
@@ -57,10 +57,11 @@ func NewPeerShardSender(args ArgPeerShardSender) (*peerShardSender, error) {
 		nodesCoordinator:          args.NodesCoordinator,
 	}
 
-	var ctx context.Context
-	ctx, pss.cancel = context.WithCancel(context.Background())
-
-	go pss.startSendingShard(ctx)
+	// JLS: 2024.11.05: do not start sending messages
+	//var ctx context.Context
+	//ctx, pss.cancel = context.WithCancel(context.Background())
+	//
+	//go pss.startSendingShard(ctx)
 
 	return pss, nil
 }
@@ -152,7 +153,7 @@ func (pss *peerShardSender) isCurrentNodeValidator() bool {
 // Close triggers the closing of the internal goroutine
 func (pss *peerShardSender) Close() error {
 	log.Debug("closing shardSender...")
-	pss.cancel()
+	//pss.cancel()
 
 	return nil
 }
