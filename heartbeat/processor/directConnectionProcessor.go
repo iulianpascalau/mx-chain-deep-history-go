@@ -29,9 +29,9 @@ type directConnectionProcessor struct {
 	peerShardMapper             heartbeat.PeerShardMapper
 	shardCoordinator            sharding.Coordinator
 	timeToReadDirectConnections time.Duration
-	cancel                      func()
-	intraShardTopic             string
-	baseCrossShardTopic         string
+	//cancel                      func()
+	intraShardTopic     string
+	baseCrossShardTopic string
 }
 
 // NewDirectConnectionProcessor will create a new direct connection processor instance
@@ -52,9 +52,10 @@ func NewDirectConnectionProcessor(args ArgsDirectConnectionProcessor) (*directCo
 		baseCrossShardTopic:         args.BaseCrossShardTopic,
 	}
 
-	var ctx context.Context
-	ctx, processor.cancel = context.WithCancel(context.Background())
-	go processor.processLoop(ctx)
+	// JLS: 2024.11.05: do not start direct connection processor
+	//var ctx context.Context
+	//ctx, processor.cancel = context.WithCancel(context.Background())
+	//go processor.processLoop(ctx)
 
 	return processor, nil
 }
@@ -145,7 +146,7 @@ func (processor *directConnectionProcessor) processCrossShardPeersOnShard(shardI
 
 // Close will end the direct connection processor main loop
 func (processor *directConnectionProcessor) Close() error {
-	processor.cancel()
+	//processor.cancel()
 
 	return nil
 }

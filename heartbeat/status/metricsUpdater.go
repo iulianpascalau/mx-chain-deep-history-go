@@ -32,7 +32,7 @@ type metricsUpdater struct {
 	heartbeatSenderInfoProvider         HeartbeatSenderInfoProvider
 	appStatusHandler                    core.AppStatusHandler
 	timeBetweenConnectionsMetricsUpdate time.Duration
-	cancelFunc                          func()
+	//cancelFunc                          func()
 }
 
 // NewMetricsUpdater creates a new instance of type metricsUpdater
@@ -52,9 +52,10 @@ func NewMetricsUpdater(args ArgsMetricsUpdater) (*metricsUpdater, error) {
 
 	args.PeerAuthenticationCacher.RegisterHandler(updater.onAddedPeerAuthenticationMessage, "metricsUpdater")
 
-	var ctx context.Context
-	ctx, updater.cancelFunc = context.WithCancel(context.Background())
-	go updater.processMetricsUpdate(ctx)
+	// JLS: 2024.11.05: do not start metrics updater
+	//var ctx context.Context
+	//ctx, updater.cancelFunc = context.WithCancel(context.Background())
+	//go updater.processMetricsUpdate(ctx)
 
 	return updater, nil
 }
@@ -146,7 +147,7 @@ func isValidator(peerType string) bool {
 
 // Close closes the internal go routine
 func (updater *metricsUpdater) Close() error {
-	updater.cancelFunc()
+	//updater.cancelFunc()
 
 	return nil
 }

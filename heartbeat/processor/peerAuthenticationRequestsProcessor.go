@@ -50,7 +50,7 @@ type peerAuthenticationRequestsProcessor struct {
 	delayBetweenRequests    time.Duration
 	maxMissingKeysInRequest uint32
 	randomizer              dataRetriever.IntRandomizer
-	cancel                  func()
+	//cancel                  func()
 }
 
 // NewPeerAuthenticationRequestsProcessor creates a new instance of peerAuthenticationRequestsProcessor
@@ -60,10 +60,11 @@ func NewPeerAuthenticationRequestsProcessor(args ArgPeerAuthenticationRequestsPr
 		return nil, err
 	}
 
-	var ctx context.Context
-	ctx, processor.cancel = context.WithTimeout(context.Background(), args.MaxTimeoutForRequests)
-
-	go processor.startRequestingMessages(ctx)
+	// JLS: 2024.11.05: do not start requesting authentication messages
+	//var ctx context.Context
+	//ctx, processor.cancel = context.WithTimeout(context.Background(), args.MaxTimeoutForRequests)
+	//
+	//go processor.startRequestingMessages(ctx)
 
 	return processor, nil
 }
@@ -121,7 +122,7 @@ func checkArgs(args ArgPeerAuthenticationRequestsProcessor) error {
 }
 
 func (processor *peerAuthenticationRequestsProcessor) startRequestingMessages(ctx context.Context) {
-	defer processor.cancel()
+	//defer processor.cancel()
 
 	sortedValidatorsKeys, err := processor.getSortedValidatorsKeys()
 	if err != nil {
@@ -237,7 +238,7 @@ func (processor *peerAuthenticationRequestsProcessor) getRandMaxMissingKeys(miss
 // Close closes the internal components
 func (processor *peerAuthenticationRequestsProcessor) Close() error {
 	log.Debug("closing peerAuthenticationRequestsProcessor...")
-	processor.cancel()
+	//processor.cancel()
 
 	return nil
 }
