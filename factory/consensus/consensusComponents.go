@@ -136,10 +136,11 @@ func (ccf *consensusComponentsFactory) Create() (*consensusComponents, error) {
 		return nil, err
 	}
 
-	err = cc.bootstrapper.StartSyncingBlocks()
-	if err != nil {
-		return nil, err
-	}
+	// JLS: 2024.11.05: do not start block syncer
+	//err = cc.bootstrapper.StartSyncingBlocks()
+	//if err != nil {
+	//	return nil, err
+	//}
 
 	epoch := ccf.getEpoch()
 	consensusState, err := ccf.createConsensusState(epoch, cc.consensusGroupSize)
