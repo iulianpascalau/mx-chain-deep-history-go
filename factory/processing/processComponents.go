@@ -482,7 +482,8 @@ func (pcf *processComponentsFactory) Create() (*processComponents, error) {
 		return nil, err
 	}
 
-	mbsPoolsCleaner.StartCleaning()
+	// JLS: 2024.11.05: do not start the miniblocks cleaner
+	// mbsPoolsCleaner.StartCleaning()
 
 	argsBasePoolsCleaner := poolsCleaner.ArgTxsPoolsCleaner{
 		ArgBasePoolsCleaner: poolsCleaner.ArgBasePoolsCleaner{
@@ -498,7 +499,8 @@ func (pcf *processComponentsFactory) Create() (*processComponents, error) {
 		return nil, err
 	}
 
-	txsPoolsCleaner.StartCleaning()
+	// JLS: 2024.11.05: do not start the txs cleaner
+	// txsPoolsCleaner.StartCleaning()
 
 	_, err = track.NewMiniBlockTrack(
 		pcf.data.Datapool(),
