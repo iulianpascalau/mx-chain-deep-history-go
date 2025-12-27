@@ -1453,12 +1453,17 @@ func (nr *nodeRunner) CreateManagedNetworkComponents(
 		networkComponentsFactoryArgs.NodeOperationMode = common.FullArchiveMode
 	}
 
-	networkComponentsFactory, err := networkComp.NewNetworkComponentsFactory(networkComponentsFactoryArgs)
-	if err != nil {
-		return nil, fmt.Errorf("NewNetworkComponentsFactory failed: %w", err)
-	}
-
-	managedNetworkComponents, err := networkComp.NewManagedNetworkComponents(networkComponentsFactory)
+	// NO real network components 2025.12.27
+	//networkComponentsFactory, err := networkComp.NewNetworkComponentsFactory(networkComponentsFactoryArgs)
+	//if err != nil {
+	//	return nil, fmt.Errorf("NewNetworkComponentsFactory failed: %w", err)
+	//}
+	//
+	//managedNetworkComponents, err := networkComp.NewManagedNetworkComponents(networkComponentsFactory)
+	//if err != nil {
+	//	return nil, err
+	//}
+	managedNetworkComponents, err := networkComp.CreateDisabledNetworkComponents()
 	if err != nil {
 		return nil, err
 	}

@@ -26,9 +26,10 @@ import (
 	"github.com/multiversx/mx-chain-go/common/fieldsChecker"
 	"github.com/multiversx/mx-chain-go/common/forking"
 	"github.com/multiversx/mx-chain-go/common/graceperiod"
+	commonMock "github.com/multiversx/mx-chain-go/common/mock"
 	"github.com/multiversx/mx-chain-go/config"
 	"github.com/multiversx/mx-chain-go/consensus"
-	"github.com/multiversx/mx-chain-go/consensus/mock"
+	consensusMock "github.com/multiversx/mx-chain-go/consensus/mock"
 	"github.com/multiversx/mx-chain-go/consensus/round"
 	"github.com/multiversx/mx-chain-go/epochStart/notifier"
 	"github.com/multiversx/mx-chain-go/errors"
@@ -255,8 +256,8 @@ func (ccf *coreComponentsFactory) Create() (*coreComponents, error) {
 	//	return nil, err
 	//}
 	// JLS: 2024.10.25: no real alarm scheduler, no watchdog
-	alarmScheduler := &mock.AlarmSchedulerStub{}
-	watchdogTimer := &mock.WatchdogMock{}
+	alarmScheduler := &commonMock.AlarmSchedulerStub{}
+	watchdogTimer := &consensusMock.WatchdogMock{}
 
 	roundNotifier := forking.NewGenericRoundNotifier()
 	enableRoundsHandler, err := enablers.NewEnableRoundsHandler(ccf.roundConfig, roundNotifier)
