@@ -10,6 +10,7 @@ import (
 	"github.com/multiversx/mx-chain-go/process"
 	economicsHandler "github.com/multiversx/mx-chain-go/process/economics"
 	"github.com/multiversx/mx-chain-go/state"
+	"github.com/multiversx/mx-chain-go/testscommon"
 	"github.com/multiversx/mx-chain-go/testscommon/enableEpochsHandlerMock"
 	"github.com/multiversx/mx-chain-go/testscommon/epochNotifier"
 	"github.com/multiversx/mx-chain-go/vm"
@@ -231,8 +232,11 @@ func CreateEconomicsData() process.EconomicsDataHandler {
 	maxGasLimitPerBlock := strconv.FormatUint(1500000000, 10)
 	minGasPrice := strconv.FormatUint(10, 10)
 	minGasLimit := strconv.FormatUint(10, 10)
+	cfg := &config.Config{EpochStartConfig: config.EpochStartConfig{RoundsPerEpoch: 14400}}
+	cfg.GeneralSettings.ChainParametersByEpoch = []config.ChainParametersByEpochConfig{{RoundDuration: 6000}}
 
 	argsNewEconomicsData := economicsHandler.ArgsNewEconomicsData{
+		GeneralConfig: cfg,
 		Economics: &config.EconomicsConfig{
 			GlobalSettings: config.GlobalSettings{
 				GenesisTotalSupply: "2000000000000000000000",
@@ -251,6 +255,10 @@ func CreateEconomicsData() process.EconomicsDataHandler {
 						DeveloperPercentage:              0.1,
 						ProtocolSustainabilityPercentage: 0.1,
 						ProtocolSustainabilityAddress:    "protocol",
+						EcosystemGrowthPercentage:        0.0,
+						EcosystemGrowthAddress:           "protocol",
+						GrowthDividendPercentage:         0.0,
+						GrowthDividendAddress:            "protocol",
 						TopUpGradientPoint:               "300000000000000000000",
 						TopUpFactor:                      0.25,
 					},
@@ -266,6 +274,7 @@ func CreateEconomicsData() process.EconomicsDataHandler {
 						MaxGasLimitPerTx:            maxGasLimitPerBlock,
 						MinGasLimit:                 minGasLimit,
 						ExtraGasLimitGuardedTx:      maxGasLimitPerBlock,
+						MaxGasHigherFactorAccepted:  "10",
 					},
 				},
 				MinGasPrice:            minGasPrice,
@@ -277,8 +286,11 @@ func CreateEconomicsData() process.EconomicsDataHandler {
 		EpochNotifier:       &epochNotifier.EpochNotifierStub{},
 		EnableEpochsHandler: &enableEpochsHandlerMock.EnableEpochsHandlerStub{},
 		TxVersionChecker:    &disabled.TxVersionChecker{},
+		PubkeyConverter:     &testscommon.PubkeyConverterStub{},
+		ShardCoordinator:    &testscommon.ShardsCoordinatorMock{},
 	}
 	economicsData, _ := economicsHandler.NewEconomicsData(argsNewEconomicsData)
+
 	return economicsData
 }
 

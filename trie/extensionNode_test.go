@@ -9,10 +9,12 @@ import (
 
 	"github.com/multiversx/mx-chain-core-go/core"
 	"github.com/multiversx/mx-chain-go/common"
+	"github.com/multiversx/mx-chain-go/common/holders"
 	"github.com/multiversx/mx-chain-go/storage/cache"
 	"github.com/multiversx/mx-chain-go/testscommon"
 	"github.com/multiversx/mx-chain-go/testscommon/hashingMocks"
 	"github.com/multiversx/mx-chain-go/testscommon/marshallerMock"
+	"github.com/multiversx/mx-chain-go/trie/keyBuilder"
 	"github.com/multiversx/mx-chain-go/trie/statistics"
 	"github.com/stretchr/testify/assert"
 )
@@ -732,7 +734,7 @@ func TestExtensionNode_reduceNodeCollapsedNode(t *testing.T) {
 	tr := initTrie()
 	_ = tr.Commit()
 	rootHash, _ := tr.RootHash()
-	collapsedTrie, _ := tr.Recreate(rootHash)
+	collapsedTrie, _ := tr.Recreate(holders.NewDefaultRootHashesHolder(rootHash))
 
 	err := collapsedTrie.Delete([]byte("doe"))
 	assert.Nil(t, err)
@@ -1076,5 +1078,36 @@ func TestExtensionNode_getVersion(t *testing.T) {
 		version, err := en.getVersion()
 		assert.Equal(t, core.AutoBalanceEnabled, version)
 		assert.Nil(t, err)
+	})
+}
+
+func TestExtensionNode_getNodeData(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil node", func(t *testing.T) {
+		t.Parallel()
+
+		var en *extensionNode
+		nodeData, err := en.getNodeData(keyBuilder.NewDisabledKeyBuilder())
+		assert.Nil(t, nodeData)
+		assert.True(t, errors.Is(err, ErrNilExtensionNode))
+	})
+	t.Run("gets data from child", func(t *testing.T) {
+		t.Parallel()
+
+		en, _ := getEnAndCollapsedEn()
+		en, _ = en.getCollapsedEn()
+		hashSize := 32
+		keySize := 1
+
+		kb := keyBuilder.NewKeyBuilder()
+		nodeData, err := en.getNodeData(kb)
+		assert.Nil(t, err)
+		assert.Equal(t, 1, len(nodeData))
+
+		assert.Equal(t, uint(1), nodeData[0].GetKeyBuilder().Size())
+		assert.Equal(t, en.EncodedChild, nodeData[0].GetData())
+		assert.Equal(t, uint64(hashSize+keySize), nodeData[0].Size())
+		assert.False(t, nodeData[0].IsLeaf())
 	})
 }

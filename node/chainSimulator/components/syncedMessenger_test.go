@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/multiversx/mx-chain-go/testscommon/p2pmocks"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/multiversx/mx-chain-go/testscommon/p2pmocks"
 )
 
 func TestNewSyncedMessenger(t *testing.T) {
@@ -50,7 +51,6 @@ func TestSyncedMessenger_DisabledMethodsShouldNotPanic(t *testing.T) {
 	messenger, _ := NewSyncedMessenger(NewSyncedBroadcastNetwork())
 
 	assert.Nil(t, messenger.Close())
-	assert.Nil(t, messenger.AddPeerTopicNotifier(nil))
 	assert.Zero(t, messenger.Port())
 	assert.Nil(t, messenger.SetPeerDenialEvaluator(nil))
 	assert.Nil(t, messenger.SetThresholdMinConnectedPeers(0))
@@ -59,7 +59,9 @@ func TestSyncedMessenger_DisabledMethodsShouldNotPanic(t *testing.T) {
 	assert.Nil(t, messenger.SetPeerShardResolver(nil))
 	assert.Nil(t, messenger.ConnectToPeer(""))
 	assert.Nil(t, messenger.Bootstrap())
-	assert.Nil(t, messenger.ProcessReceivedMessage(nil, "", nil))
+	msgID, err := messenger.ProcessReceivedMessage(nil, "", nil)
+	assert.Nil(t, err)
+	assert.Nil(t, msgID)
 
 	messenger.WaitForConnections(0, 0)
 

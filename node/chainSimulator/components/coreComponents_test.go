@@ -5,8 +5,11 @@ import (
 	"testing"
 
 	"github.com/multiversx/mx-chain-core-go/data/endProcess"
-	"github.com/multiversx/mx-chain-go/config"
 	"github.com/stretchr/testify/require"
+
+	"github.com/multiversx/mx-chain-go/testscommon/components"
+
+	"github.com/multiversx/mx-chain-go/config"
 )
 
 func createArgsCoreComponentsHolder() ArgsCoreComponentsHolder {
@@ -29,19 +32,34 @@ func createArgsCoreComponentsHolder() ArgsCoreComponentsHolder {
 			},
 			AddressPubkeyConverter: config.PubkeyConfig{
 				Length: 32,
-				Type:   "hex",
+				Type:   "bech32",
+				Hrp:    "erd",
 			},
 			ValidatorPubkeyConverter: config.PubkeyConfig{
-				Length: 128,
+				Length: 96,
 				Type:   "hex",
 			},
 			GeneralSettings: config.GeneralSettingsConfig{
 				ChainID:               "T",
 				MinTransactionVersion: 1,
+				ChainParametersByEpoch: []config.ChainParametersByEpochConfig{
+					{
+						EnableEpoch:                 0,
+						RoundDuration:               4000,
+						ShardConsensusGroupSize:     1,
+						ShardMinNumNodes:            1,
+						MetachainConsensusGroupSize: 1,
+						MetachainMinNumNodes:        1,
+						Hysteresis:                  0,
+						Adaptivity:                  false,
+					},
+				},
+				EpochChangeGracePeriodByEpoch: []config.EpochChangeGracePeriodByEpoch{{EnableEpoch: 0, GracePeriodInRounds: 1}},
 			},
 			Hardfork: config.HardforkConfig{
-				PublicKeyToListenFrom: "41378f754e2c7b2745208c3ed21b151d297acdc84c3aca00b9e292cf28ec2d444771070157ea7760ed83c26f4fed387d0077e00b563a95825dac2cbc349fc0025ccf774e37b0a98ad9724d30e90f8c29b4091ccb738ed9ffc0573df776ee9ea30b3c038b55e532760ea4a8f152f2a52848020e5cee1cc537f2c2323399723081",
+				PublicKeyToListenFrom: components.DummyPk,
 			},
+			EpochStartConfig: config.EpochStartConfig{RoundsPerEpoch: 14400},
 		},
 		EnableEpochsConfig: config.EnableEpochs{},
 		RoundsConfig: config.RoundConfig{
@@ -72,6 +90,7 @@ func createArgsCoreComponentsHolder() ArgsCoreComponentsHolder {
 						MaxGasLimitPerTx:            "10000000000",
 						MinGasLimit:                 "10",
 						ExtraGasLimitGuardedTx:      "50000",
+						MaxGasHigherFactorAccepted:  "10",
 					},
 				},
 				GasPriceModifier:       0.01,
@@ -85,10 +104,14 @@ func createArgsCoreComponentsHolder() ArgsCoreComponentsHolder {
 						LeaderPercentage:                 0.1,
 						DeveloperPercentage:              0.1,
 						ProtocolSustainabilityPercentage: 0.1,
-						ProtocolSustainabilityAddress:    "erd1932eft30w753xyvme8d49qejgkjc09n5e49w4mwdjtm0neld797su0dlxp",
+						ProtocolSustainabilityAddress:    testingProtocolSustainabilityAddress,
 						TopUpGradientPoint:               "300000000000000000000",
 						TopUpFactor:                      0.25,
 						EpochEnable:                      0,
+						EcosystemGrowthPercentage:        0.0,
+						EcosystemGrowthAddress:           testingProtocolSustainabilityAddress,
+						GrowthDividendPercentage:         0.0,
+						GrowthDividendAddress:            testingProtocolSustainabilityAddress,
 					},
 				},
 			},
@@ -106,33 +129,39 @@ func createArgsCoreComponentsHolder() ArgsCoreComponentsHolder {
 				},
 			},
 			ShardChain: config.ShardChain{
-				RatingSteps: config.RatingSteps{
-					HoursToMaxRatingFromStartRating: 2,
-					ProposerValidatorImportance:     1,
-					ProposerDecreaseFactor:          -4,
-					ValidatorDecreaseFactor:         -4,
-					ConsecutiveMissedBlocksPenalty:  1.2,
+				RatingStepsByEpoch: []config.RatingSteps{
+					{
+						HoursToMaxRatingFromStartRating: 2,
+						ProposerValidatorImportance:     1,
+						ProposerDecreaseFactor:          -4,
+						ValidatorDecreaseFactor:         -4,
+						ConsecutiveMissedBlocksPenalty:  1.2,
+					},
 				},
 			},
 			MetaChain: config.MetaChain{
-				RatingSteps: config.RatingSteps{
-					HoursToMaxRatingFromStartRating: 2,
-					ProposerValidatorImportance:     1,
-					ProposerDecreaseFactor:          -4,
-					ValidatorDecreaseFactor:         -4,
-					ConsecutiveMissedBlocksPenalty:  1.3,
+				RatingStepsByEpoch: []config.RatingSteps{
+					{
+						HoursToMaxRatingFromStartRating: 2,
+						ProposerValidatorImportance:     1,
+						ProposerDecreaseFactor:          -4,
+						ValidatorDecreaseFactor:         -4,
+						ConsecutiveMissedBlocksPenalty:  1.3,
+					},
 				},
 			},
 		},
-		ChanStopNodeProcess: make(chan endProcess.ArgEndProcess),
-		InitialRound:        0,
-		NodesSetupPath:      "../../../sharding/mock/testdata/nodesSetupMock.json",
-		GasScheduleFilename: "../../../cmd/node/config/gasSchedules/gasScheduleV8.toml",
-		NumShards:           3,
-		WorkingDir:          ".",
-		MinNodesPerShard:    1,
-		MinNodesMeta:        1,
-		RoundDurationInMs:   6000,
+		ChanStopNodeProcess:         make(chan endProcess.ArgEndProcess),
+		InitialRound:                0,
+		NodesSetupPath:              "../../../cmd/node/config/nodesSetup.json",
+		GasScheduleFilename:         "../../../cmd/node/config/gasSchedules/gasScheduleV8.toml",
+		NumShards:                   3,
+		WorkingDir:                  ".",
+		MinNodesPerShard:            1,
+		MinNodesMeta:                1,
+		ConsensusGroupSize:          1,
+		MetaChainConsensusGroupSize: 1,
+		RoundDurationInMs:           6000,
 	}
 }
 
@@ -289,8 +318,8 @@ func TestCoreComponents_GettersSetters(t *testing.T) {
 	require.Equal(t, "T", comp.ChainID())
 	require.Equal(t, uint32(1), comp.MinTransactionVersion())
 	require.NotNil(t, comp.TxVersionChecker())
-	require.Equal(t, uint32(64), comp.EncodedAddressLen())
-	hfPk, _ := hex.DecodeString("41378f754e2c7b2745208c3ed21b151d297acdc84c3aca00b9e292cf28ec2d444771070157ea7760ed83c26f4fed387d0077e00b563a95825dac2cbc349fc0025ccf774e37b0a98ad9724d30e90f8c29b4091ccb738ed9ffc0573df776ee9ea30b3c038b55e532760ea4a8f152f2a52848020e5cee1cc537f2c2323399723081")
+	require.Equal(t, uint32(62), comp.EncodedAddressLen())
+	hfPk, _ := hex.DecodeString(components.DummyPk)
 	require.Equal(t, hfPk, comp.HardforkTriggerPubKey())
 	require.NotNil(t, comp.NodeTypeProvider())
 	require.NotNil(t, comp.WasmVMChangeLocker())

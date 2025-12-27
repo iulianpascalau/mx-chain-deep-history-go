@@ -76,6 +76,7 @@ func createMockArgument(
 			TxVersionCheck:           &testscommon.TxVersionCheckerStub{},
 			MinTxVersion:             1,
 			EnableEpochsHandlerField: &enableEpochsHandlerMock.EnableEpochsHandlerStub{},
+			EconomicsDataField:       &economicsmocks.EconomicsHandlerMock{},
 		},
 		Data: &mock.DataComponentsMock{
 			Storage: &storageCommon.ChainStorerStub{
@@ -92,6 +93,7 @@ func createMockArgument(
 			WasmVMVersions: []config.WasmVMVersionByEpoch{
 				{StartEpoch: 0, Version: "*"},
 			},
+			TransferAndExecuteByUserAddresses: []string{"3132333435363738393031323334353637383930313233343536373839303234"},
 		},
 		HardForkConfig: config.HardforkConfig{
 			ImportKeysStorageConfig: config.StorageConfig{
@@ -137,7 +139,8 @@ func createMockArgument(
 					MinVetoThreshold: 0.5,
 					LostProposalFee:  "1",
 				},
-				OwnerAddress: "3132333435363738393031323334353637383930313233343536373839303234",
+				OwnerAddress:                 "3132333435363738393031323334353637383930313233343536373839303234",
+				MaxVotingDelayPeriodInEpochs: 30,
 			},
 			StakingSystemSCConfig: config.StakingSystemSCConfig{
 				GenesisNodePrice:                     nodePrice.Text(10),
@@ -198,9 +201,10 @@ func createMockArgument(
 	}
 
 	argsAccCreator := factoryState.ArgsAccountCreator{
-		Hasher:              &hashingMocks.HasherMock{},
-		Marshaller:          &mock.MarshalizerMock{},
-		EnableEpochsHandler: &enableEpochsHandlerMock.EnableEpochsHandlerStub{},
+		Hasher:                 &hashingMocks.HasherMock{},
+		Marshaller:             &mock.MarshalizerMock{},
+		EnableEpochsHandler:    &enableEpochsHandlerMock.EnableEpochsHandlerStub{},
+		StateAccessesCollector: &stateMock.StateAccessesCollectorStub{},
 	}
 	accCreator, err := factoryState.NewAccountCreator(argsAccCreator)
 	require.Nil(t, err)
@@ -233,7 +237,7 @@ func createMockArgument(
 	gasMap := wasmConfig.MakeGasMapForTests()
 	defaults.FillGasMapInternal(gasMap, 1)
 	arg.GasSchedule = testscommon.NewGasScheduleNotifierMock(gasMap)
-	ted := &economicsmocks.EconomicsHandlerStub{
+	ted := &economicsmocks.EconomicsHandlerMock{
 		GenesisTotalSupplyCalled: func() *big.Int {
 			return entireSupply
 		},
@@ -306,7 +310,8 @@ func TestNewGenesisBlockCreator(t *testing.T) {
 
 		arg := createMockArgument(t, "testdata/genesisTest1.json", &mock.InitialNodesHandlerStub{}, big.NewInt(22000))
 		arg.Core = &mock.CoreComponentsMock{
-			AddrPubKeyConv: nil,
+			AddrPubKeyConv:     nil,
+			EconomicsDataField: &economicsmocks.EconomicsHandlerMock{},
 		}
 
 		gbc, err := NewGenesisBlockCreator(arg)

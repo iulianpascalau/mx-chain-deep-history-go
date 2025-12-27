@@ -11,12 +11,13 @@ import (
 	"github.com/multiversx/mx-chain-core-go/data"
 	"github.com/multiversx/mx-chain-core-go/data/block"
 	"github.com/multiversx/mx-chain-crypto-go"
+	logger "github.com/multiversx/mx-chain-logger-go"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/multiversx/mx-chain-go/dataRetriever"
 	"github.com/multiversx/mx-chain-go/integrationTests"
 	testBlock "github.com/multiversx/mx-chain-go/integrationTests/singleShard/block"
 	"github.com/multiversx/mx-chain-go/process"
-	logger "github.com/multiversx/mx-chain-logger-go"
-	"github.com/stretchr/testify/assert"
 )
 
 // TestShardShouldNotProposeAndExecuteTwoBlocksInSameRound tests that a shard can not continue building on a
@@ -43,6 +44,7 @@ func TestShardShouldNotProposeAndExecuteTwoBlocksInSameRound(t *testing.T) {
 	integrationTests.ConnectNodes(connectableNodes)
 
 	idxProposer := 0
+	leader := nodes[idxProposer]
 
 	defer func() {
 		for _, n := range nodes {
@@ -57,24 +59,24 @@ func TestShardShouldNotProposeAndExecuteTwoBlocksInSameRound(t *testing.T) {
 	nonce := uint64(1)
 	round = integrationTests.IncrementAndPrintRound(round)
 
-	err := proposeAndCommitBlock(nodes[idxProposer], round, nonce)
+	err := proposeAndCommitBlock(leader, round, nonce)
 	assert.Nil(t, err)
 
-	integrationTests.SyncBlock(t, nodes, []int{idxProposer}, nonce)
+	integrationTests.SyncBlock(t, nodes, []*integrationTests.TestProcessorNode{leader}, nonce)
 
 	time.Sleep(testBlock.StepDelay)
 
 	checkCurrentBlockHeight(t, nodes, nonce)
 
-	//only nonce increases, round stays the same
+	// only nonce increases, round stays the same
 	nonce++
 
 	err = proposeAndCommitBlock(nodes[idxProposer], round, nonce)
 	assert.Equal(t, process.ErrLowerRoundInBlock, err)
 
-	//mockTestingT is used as in normal case SyncBlock would fail as it doesn't find the header with nonce 2
+	// mockTestingT is used as in normal case SyncBlock would fail as it doesn't find the header with nonce 2
 	mockTestingT := &testing.T{}
-	integrationTests.SyncBlock(mockTestingT, nodes, []int{idxProposer}, nonce)
+	integrationTests.SyncBlock(mockTestingT, nodes, []*integrationTests.TestProcessorNode{leader}, nonce)
 
 	time.Sleep(testBlock.StepDelay)
 
@@ -82,12 +84,11 @@ func TestShardShouldNotProposeAndExecuteTwoBlocksInSameRound(t *testing.T) {
 }
 
 // TestShardShouldProposeBlockContainingInvalidTransactions tests the following scenario:
-// 1. generate 3 move balance transactions: one that can be executed, one that can not be executed but the account has
-//    the balance for the fee and one that is completely invalid (no balance left for it)
-// 2. proposer will have those 3 transactions in its pools and will propose a block
-// 3. another node will be able to sync the proposed block (and request - receive) the 2 transactions that
-//    will end up in the block (one valid and one invalid)
-// 4. the non-executable transaction will be removed from the proposer's pool
+//  1. generate 3 move balance transactions: one that can be executed, one to be processed as invalid, and one that isn't executable (no balance left for fee).
+//  2. proposer will have those 3 transactions in its pools and will propose a block
+//  3. another node will be able to sync the proposed block (and request - receive) the 2 transactions that
+//     will end up in the block (one valid and one invalid)
+//  4. the non-executable transaction will not be immediately removed from the proposer's pool. See MX-16200.
 func TestShardShouldProposeBlockContainingInvalidTransactions(t *testing.T) {
 	if testing.Short() {
 		t.Skip("this is not a short test")
@@ -110,7 +111,7 @@ func TestShardShouldProposeBlockContainingInvalidTransactions(t *testing.T) {
 	integrationTests.ConnectNodes(connectableNodes)
 
 	idxProposer := 0
-	proposer := nodes[idxProposer]
+	leader := nodes[idxProposer]
 
 	defer func() {
 		for _, n := range nodes {
@@ -128,10 +129,10 @@ func TestShardShouldProposeBlockContainingInvalidTransactions(t *testing.T) {
 	transferValue := uint64(1000000)
 	mintAllNodes(nodes, transferValue)
 
-	txs, hashes := generateTransferTxs(transferValue, proposer.OwnAccount.SkTxSign, nodes[1].OwnAccount.PkTxSign)
-	addTxsInDataPool(proposer, txs, hashes)
+	txs, hashes := generateTransferTxs(transferValue, leader.OwnAccount.SkTxSign, nodes[1].OwnAccount.PkTxSign)
+	addTxsInDataPool(leader, txs, hashes)
 
-	_, _ = integrationTests.ProposeAndSyncOneBlock(t, nodes, []int{idxProposer}, round, nonce)
+	_, _ = integrationTests.ProposeAndSyncOneBlock(t, nodes, []*integrationTests.TestProcessorNode{leader}, round, nonce)
 
 	fmt.Println(integrationTests.MakeDisplayTable(nodes))
 
@@ -195,7 +196,18 @@ func testStateOnNodes(t *testing.T, nodes []*integrationTests.TestProcessorNode,
 	testTxIsInMiniblock(t, proposer, hashes[txValidIdx], block.TxBlock)
 	testTxIsInMiniblock(t, proposer, hashes[txInvalidIdx], block.InvalidBlock)
 	testTxIsInNotInBody(t, proposer, hashes[txDeletedIdx])
-	testTxHashNotPresentInPool(t, proposer, hashes[txDeletedIdx])
+
+	// Removed from mempool.
+	_, ok := proposer.DataPool.Transactions().SearchFirstData(hashes[txValidIdx])
+	assert.False(t, ok)
+
+	// Removed from mempool.
+	_, ok = proposer.DataPool.Transactions().SearchFirstData(hashes[txInvalidIdx])
+	assert.False(t, ok)
+
+	// Not removed from mempool (see MX-16200).
+	_, ok = proposer.DataPool.Transactions().SearchFirstData(hashes[txDeletedIdx])
+	assert.True(t, ok)
 }
 
 func testSameBlockHeight(t *testing.T, nodes []*integrationTests.TestProcessorNode, idxProposer int, expectedHeight uint64) {
@@ -206,12 +218,6 @@ func testSameBlockHeight(t *testing.T, nodes []*integrationTests.TestProcessorNo
 		assert.Equal(t, expectedHeight, n.BlockChain.GetCurrentBlockHeader().GetNonce())
 		assert.Equal(t, proposer.BlockChain.GetCurrentBlockHeaderHash(), n.BlockChain.GetCurrentBlockHeaderHash())
 	}
-}
-
-func testTxHashNotPresentInPool(t *testing.T, proposer *integrationTests.TestProcessorNode, hash []byte) {
-	txCache := proposer.DataPool.Transactions()
-	_, ok := txCache.SearchFirstData(hash)
-	assert.False(t, ok)
 }
 
 func testTxIsInMiniblock(t *testing.T, proposer *integrationTests.TestProcessorNode, hash []byte, bt block.Type) {

@@ -5,39 +5,65 @@ import (
 )
 
 const (
-	hashField        = "hash"
-	nonceField       = "nonce"
-	senderField      = "sender"
-	receiverField    = "receiver"
-	gasLimitField    = "gaslimit"
-	gasPriceField    = "gasprice"
-	rcvUsernameField = "receiverusername"
-	dataField        = "data"
-	valueField       = "value"
+	hashField              = "hash"
+	nonceField             = "nonce"
+	senderField            = "sender"
+	receiverField          = "receiver"
+	gasLimitField          = "gaslimit"
+	gasPriceField          = "gasprice"
+	rcvUsernameField       = "receiverusername"
+	dataField              = "data"
+	valueField             = "value"
+	signatureField         = "signature"
+	guardianField          = "guardian"
+	guardianSignatureField = "guardiansignature"
+	senderShardID          = "sendershard"
+	receiverShardID        = "receivershard"
+	relayerField           = "relayer"
+	relayerSignatureField  = "relayersignature"
+	wildCard               = "*"
+
+	separator = ","
 )
 
 type fieldsHandler struct {
-	HasNonce       bool
-	HasSender      bool
-	HasReceiver    bool
-	HasGasLimit    bool
-	HasGasPrice    bool
-	HasRcvUsername bool
-	HasData        bool
-	HasValue       bool
+	fieldsMap map[string]struct{}
 }
 
 func newFieldsHandler(parameters string) fieldsHandler {
-	parameters = strings.ToLower(parameters)
-	ph := fieldsHandler{
-		HasNonce:       strings.Contains(parameters, nonceField),
-		HasSender:      strings.Contains(parameters, senderField),
-		HasReceiver:    strings.Contains(parameters, receiverField),
-		HasGasLimit:    strings.Contains(parameters, gasLimitField),
-		HasGasPrice:    strings.Contains(parameters, gasPriceField),
-		HasRcvUsername: strings.Contains(parameters, rcvUsernameField),
-		HasData:        strings.Contains(parameters, dataField),
-		HasValue:       strings.Contains(parameters, valueField),
+	if len(parameters) == 0 {
+		return fieldsHandler{
+			fieldsMap: map[string]struct{}{
+				hashField: {}, // hash should always be returned
+			},
+		}
 	}
-	return ph
+
+	parameters = strings.ToLower(parameters)
+	fieldsMap := sliceToMap(strings.Split(parameters, separator))
+	fieldsMap[hashField] = struct{}{} // hashField should always be returned
+
+	return fieldsHandler{
+		fieldsMap: fieldsMap,
+	}
+}
+
+// IsFieldSet returns true if the provided field is set
+func (handler *fieldsHandler) IsFieldSet(field string) bool {
+	_, hasWildCard := handler.fieldsMap[wildCard]
+	if hasWildCard {
+		return true
+	}
+
+	_, has := handler.fieldsMap[strings.ToLower(field)]
+	return has
+}
+
+func sliceToMap(providedSlice []string) map[string]struct{} {
+	result := make(map[string]struct{}, len(providedSlice))
+	for _, entry := range providedSlice {
+		result[entry] = struct{}{}
+	}
+
+	return result
 }

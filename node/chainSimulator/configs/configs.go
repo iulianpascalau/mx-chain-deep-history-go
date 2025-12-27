@@ -11,13 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/multiversx/mx-chain-core-go/core"
-	"github.com/multiversx/mx-chain-core-go/core/pubkeyConverter"
-	shardingCore "github.com/multiversx/mx-chain-core-go/core/sharding"
-	crypto "github.com/multiversx/mx-chain-crypto-go"
-	"github.com/multiversx/mx-chain-crypto-go/signing"
-	"github.com/multiversx/mx-chain-crypto-go/signing/ed25519"
-	"github.com/multiversx/mx-chain-crypto-go/signing/mcl"
 	"github.com/multiversx/mx-chain-go/common/factory"
 	"github.com/multiversx/mx-chain-go/config"
 	"github.com/multiversx/mx-chain-go/genesis/data"
@@ -26,6 +19,14 @@ import (
 	"github.com/multiversx/mx-chain-go/sharding"
 	"github.com/multiversx/mx-chain-go/storage/storageunit"
 	"github.com/multiversx/mx-chain-go/testscommon"
+
+	"github.com/multiversx/mx-chain-core-go/core"
+	"github.com/multiversx/mx-chain-core-go/core/pubkeyConverter"
+	shardingCore "github.com/multiversx/mx-chain-core-go/core/sharding"
+	crypto "github.com/multiversx/mx-chain-crypto-go"
+	"github.com/multiversx/mx-chain-crypto-go/signing"
+	"github.com/multiversx/mx-chain-crypto-go/signing/ed25519"
+	"github.com/multiversx/mx-chain-crypto-go/signing/mcl"
 )
 
 var oneEgld = big.NewInt(1000000000000000000)
@@ -35,23 +36,28 @@ const (
 	// ChainID contains the chain id
 	ChainID = "chain"
 
-	allValidatorsPemFileName = "allValidatorsKeys.pem"
+	// ChainSimulatorConsensusGroupSize defines the size of the consensus group for chain simulator
+	ChainSimulatorConsensusGroupSize = 1
+	allValidatorsPemFileName         = "allValidatorsKeys.pem"
 )
 
 // ArgsChainSimulatorConfigs holds all the components needed to create the chain simulator configs
 type ArgsChainSimulatorConfigs struct {
-	NumOfShards              uint32
-	OriginalConfigsPath      string
-	GenesisTimeStamp         int64
-	RoundDurationInMillis    uint64
-	TempDir                  string
-	MinNodesPerShard         uint32
-	MetaChainMinNodes        uint32
-	InitialEpoch             uint32
-	RoundsPerEpoch           core.OptionalUint64
-	NumNodesWaitingListShard uint32
-	NumNodesWaitingListMeta  uint32
-	AlterConfigsFunction     func(cfg *config.Configs)
+	NumOfShards                 uint32
+	OriginalConfigsPath         string
+	GenesisTimeStamp            int64
+	RoundDurationInMillis       uint64
+	TempDir                     string
+	MinNodesPerShard            uint32
+	ConsensusGroupSize          uint32
+	MetaChainMinNodes           uint32
+	MetaChainConsensusGroupSize uint32
+	Hysteresis                  float32
+	InitialEpoch                uint32
+	RoundsPerEpoch              core.OptionalUint64
+	NumNodesWaitingListShard    uint32
+	NumNodesWaitingListMeta     uint32
+	AlterConfigsFunction        func(cfg *config.Configs)
 }
 
 // ArgsConfigsSimulator holds the configs for the chain simulator
@@ -110,12 +116,12 @@ func CreateChainSimulatorConfigs(args ArgsChainSimulatorConfigs) (*ArgsConfigsSi
 
 	// set compatible trie configs
 	configs.GeneralConfig.StateTriesConfig.SnapshotsEnabled = false
-
 	// enable db lookup extension
 	configs.GeneralConfig.DbLookupExtensions.Enabled = true
 
 	configs.GeneralConfig.EpochStartConfig.ExtraDelayForRequestBlockInfoInMilliseconds = 1
 	configs.GeneralConfig.EpochStartConfig.GenesisEpoch = args.InitialEpoch
+	configs.GeneralConfig.EpochStartConfig.MinRoundsBetweenEpochs = 1
 
 	if args.RoundsPerEpoch.HasValue {
 		configs.GeneralConfig.EpochStartConfig.RoundsPerEpoch = int64(args.RoundsPerEpoch.Value)
@@ -126,10 +132,13 @@ func CreateChainSimulatorConfigs(args ArgsChainSimulatorConfigs) (*ArgsConfigsSi
 		return nil, err
 	}
 
+	updateConfigsChainParameters(args, configs)
 	node.ApplyArchCustomConfigs(configs)
 
 	if args.AlterConfigsFunction != nil {
 		args.AlterConfigsFunction(configs)
+		// this is needed to keep in sync Andromeda flag and the second entry from chain parameters
+		configs.GeneralConfig.GeneralSettings.ChainParametersByEpoch[1].EnableEpoch = configs.EpochConfig.EnableEpochs.AndromedaEnableEpoch
 	}
 
 	return &ArgsConfigsSimulator{
@@ -138,6 +147,21 @@ func CreateChainSimulatorConfigs(args ArgsChainSimulatorConfigs) (*ArgsConfigsSi
 		GasScheduleFilename:   gasScheduleName,
 		InitialWallets:        initialWallets,
 	}, nil
+}
+
+func updateConfigsChainParameters(args ArgsChainSimulatorConfigs, configs *config.Configs) {
+	for idx := 0; idx < len(configs.GeneralConfig.GeneralSettings.ChainParametersByEpoch); idx++ {
+		configs.GeneralConfig.GeneralSettings.ChainParametersByEpoch[idx].ShardMinNumNodes = args.MinNodesPerShard
+		configs.GeneralConfig.GeneralSettings.ChainParametersByEpoch[idx].MetachainMinNumNodes = args.MetaChainMinNodes
+		configs.GeneralConfig.GeneralSettings.ChainParametersByEpoch[idx].MetachainConsensusGroupSize = args.MetaChainConsensusGroupSize
+		configs.GeneralConfig.GeneralSettings.ChainParametersByEpoch[idx].ShardConsensusGroupSize = args.ConsensusGroupSize
+		configs.GeneralConfig.GeneralSettings.ChainParametersByEpoch[idx].RoundDuration = args.RoundDurationInMillis
+		configs.GeneralConfig.GeneralSettings.ChainParametersByEpoch[idx].Hysteresis = args.Hysteresis
+	}
+
+	if len(configs.GeneralConfig.GeneralSettings.ChainParametersByEpoch) > 1 {
+		configs.GeneralConfig.GeneralSettings.ChainParametersByEpoch[1].ShardConsensusGroupSize = args.MinNodesPerShard
+	}
 }
 
 // SetMaxNumberOfNodesInConfigs will correctly set the max number of nodes in configs
@@ -162,10 +186,10 @@ func SetMaxNumberOfNodesInConfigs(cfg *config.Configs, eligibleNodes uint32, wai
 
 // SetQuickJailRatingConfig will set the rating config in a way that leads to rapid jailing of a node
 func SetQuickJailRatingConfig(cfg *config.Configs) {
-	cfg.RatingsConfig.ShardChain.RatingSteps.ConsecutiveMissedBlocksPenalty = 100
-	cfg.RatingsConfig.ShardChain.RatingSteps.HoursToMaxRatingFromStartRating = 1
-	cfg.RatingsConfig.MetaChain.RatingSteps.ConsecutiveMissedBlocksPenalty = 100
-	cfg.RatingsConfig.MetaChain.RatingSteps.HoursToMaxRatingFromStartRating = 1
+	cfg.RatingsConfig.ShardChain.RatingStepsByEpoch[0].ConsecutiveMissedBlocksPenalty = 100
+	cfg.RatingsConfig.ShardChain.RatingStepsByEpoch[0].HoursToMaxRatingFromStartRating = 1
+	cfg.RatingsConfig.MetaChain.RatingStepsByEpoch[0].ConsecutiveMissedBlocksPenalty = 100
+	cfg.RatingsConfig.MetaChain.RatingStepsByEpoch[0].HoursToMaxRatingFromStartRating = 1
 }
 
 // SetStakingV4ActivationEpochs configures activation epochs for Staking V4.
@@ -274,15 +298,10 @@ func generateValidatorsKeyAndUpdateFiles(
 	nodes.RoundDuration = args.RoundDurationInMillis
 	nodes.StartTime = args.GenesisTimeStamp
 
-	// TODO fix this to can be configurable
-	nodes.ConsensusGroupSize = 1
-	nodes.MetaChainConsensusGroupSize = 1
 	nodes.Hysteresis = 0
 
-	nodes.MinNodesPerShard = args.MinNodesPerShard
-	nodes.MetaChainMinNodes = args.MetaChainMinNodes
-
 	nodes.InitialNodes = make([]*sharding.InitialNode, 0)
+	configs.NodesConfig.InitialNodes = make([]*config.InitialNodeConfig, 0)
 	privateKeys := make([]crypto.PrivateKey, 0)
 	publicKeys := make([]crypto.PublicKey, 0)
 	walletIndex := 0
@@ -300,6 +319,12 @@ func generateValidatorsKeyAndUpdateFiles(
 		nodes.InitialNodes = append(nodes.InitialNodes, &sharding.InitialNode{
 			PubKey:  hex.EncodeToString(pkBytes),
 			Address: stakeWallets[walletIndex].Address.Bech32,
+		})
+
+		configs.NodesConfig.InitialNodes = append(configs.NodesConfig.InitialNodes, &config.InitialNodeConfig{
+			PubKey:        hex.EncodeToString(pkBytes),
+			Address:       stakeWallets[walletIndex].Address.Bech32,
+			InitialRating: 5000001,
 		})
 
 		walletIndex++
@@ -321,6 +346,13 @@ func generateValidatorsKeyAndUpdateFiles(
 				PubKey:  hex.EncodeToString(pkBytes),
 				Address: stakeWallets[walletIndex].Address.Bech32,
 			})
+
+			configs.NodesConfig.InitialNodes = append(configs.NodesConfig.InitialNodes, &config.InitialNodeConfig{
+				PubKey:        hex.EncodeToString(pkBytes),
+				Address:       stakeWallets[walletIndex].Address.Bech32,
+				InitialRating: 5000001,
+			})
+
 			walletIndex++
 		}
 	}

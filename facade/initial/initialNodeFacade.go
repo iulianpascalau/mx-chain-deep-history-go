@@ -9,6 +9,7 @@ import (
 	"github.com/multiversx/mx-chain-core-go/data/alteredAccount"
 	"github.com/multiversx/mx-chain-core-go/data/api"
 	"github.com/multiversx/mx-chain-core-go/data/esdt"
+	"github.com/multiversx/mx-chain-core-go/data/smartContractResult"
 	"github.com/multiversx/mx-chain-core-go/data/transaction"
 	"github.com/multiversx/mx-chain-core-go/data/validator"
 	"github.com/multiversx/mx-chain-core-go/data/vm"
@@ -168,6 +169,11 @@ func (inf *initialNodeFacade) SendBulkTransactions(_ []*transaction.Transaction)
 
 // SimulateTransactionExecution returns nil and error
 func (inf *initialNodeFacade) SimulateTransactionExecution(_ *transaction.Transaction) (*txSimData.SimulationResultsWithVMOutput, error) {
+	return nil, errNodeStarting
+}
+
+// SimulateSCRExecutionCost returns nil and error
+func (inf *initialNodeFacade) SimulateSCRExecutionCost(_ *smartContractResult.SmartContractResult) (*transaction.CostResponse, error) {
 	return nil, errNodeStarting
 }
 
@@ -346,6 +352,11 @@ func (inf *initialNodeFacade) GetKeyValuePairs(_ string, _ api.AccountQueryOptio
 	return nil, api.BlockInfo{}, errNodeStarting
 }
 
+// IterateKeys returns error
+func (inf *initialNodeFacade) IterateKeys(_ string, _ uint, _ [][]byte, _ api.AccountQueryOptions) (map[string]string, [][]byte, api.BlockInfo, error) {
+	return nil, nil, api.BlockInfo{}, errNodeStarting
+}
+
 // GetGuardianData returns error
 func (inf *initialNodeFacade) GetGuardianData(_ string, _ api.AccountQueryOptions) (api.GuardianData, api.BlockInfo, error) {
 	return api.GuardianData{}, api.BlockInfo{}, errNodeStarting
@@ -419,6 +430,11 @@ func (inf *initialNodeFacade) GetGasConfigs() (map[string]map[string]uint64, err
 // IsDataTrieMigrated returns false and error
 func (inf *initialNodeFacade) IsDataTrieMigrated(_ string, _ api.AccountQueryOptions) (bool, error) {
 	return false, errNodeStarting
+}
+
+// GetSCRsByTxHash return a nil slice and error
+func (inf *initialNodeFacade) GetSCRsByTxHash(_ string, _ string) ([]*transaction.ApiSmartContractResult, error) {
+	return nil, errNodeStarting
 }
 
 // GetManagedKeysCount returns 0

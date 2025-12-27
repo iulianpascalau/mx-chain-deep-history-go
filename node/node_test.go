@@ -45,11 +45,13 @@ import (
 	"github.com/multiversx/mx-chain-go/process"
 	"github.com/multiversx/mx-chain-go/state"
 	"github.com/multiversx/mx-chain-go/state/accounts"
+	"github.com/multiversx/mx-chain-go/state/disabled"
 	"github.com/multiversx/mx-chain-go/state/parsers"
 	"github.com/multiversx/mx-chain-go/state/trackableDataTrie"
 	"github.com/multiversx/mx-chain-go/storage"
 	"github.com/multiversx/mx-chain-go/testscommon"
 	"github.com/multiversx/mx-chain-go/testscommon/bootstrapMocks"
+	"github.com/multiversx/mx-chain-go/testscommon/consensus"
 	dataRetrieverMock "github.com/multiversx/mx-chain-go/testscommon/dataRetriever"
 	"github.com/multiversx/mx-chain-go/testscommon/dblookupext"
 	"github.com/multiversx/mx-chain-go/testscommon/economicsmocks"
@@ -100,7 +102,7 @@ func createMockPubkeyConverter() *testscommon.PubkeyConverterMock {
 
 func createAcc(address []byte) state.UserAccountHandler {
 	dtlp, _ := parsers.NewDataTrieLeafParser(address, &marshallerMock.MarshalizerMock{}, &enableEpochsHandlerMock.EnableEpochsHandlerStub{})
-	dtt, _ := trackableDataTrie.NewTrackableDataTrie(address, &testscommon.HasherStub{}, &marshallerMock.MarshalizerMock{}, &enableEpochsHandlerMock.EnableEpochsHandlerStub{})
+	dtt, _ := trackableDataTrie.NewTrackableDataTrie(address, &testscommon.HasherStub{}, &marshallerMock.MarshalizerMock{}, &enableEpochsHandlerMock.EnableEpochsHandlerStub{}, disabled.NewDisabledStateAccessesCollector())
 	acc, _ := accounts.NewUserAccount(address, dtt, dtlp)
 
 	return acc
@@ -115,7 +117,7 @@ func getAccAdapter(balance *big.Int) *stateMock.AccountsStub {
 
 		return acc, nil
 	}
-	accDB.RecreateTrieCalled = func(_ []byte) error {
+	accDB.RecreateTrieCalled = func(_ common.RootHashHolder) error {
 		return nil
 	}
 
@@ -239,7 +241,7 @@ func TestNode_GetBalanceAccNotFoundShouldReturnEmpty(t *testing.T) {
 		GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 			return nil, nil, state.NewErrAccountNotFoundAtBlock(dummyBlockInfo.forProcessing())
 		},
-		RecreateTrieCalled: func(_ []byte) error {
+		RecreateTrieCalled: func(_ common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -341,7 +343,7 @@ func TestNode_GetCodeHashAccNotFoundShouldReturnEmpty(t *testing.T) {
 		GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 			return nil, nil, state.NewErrAccountNotFoundAtBlock(dummyBlockInfo.forProcessing())
 		},
-		RecreateTrieCalled: func(_ []byte) error {
+		RecreateTrieCalled: func(_ common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -412,7 +414,7 @@ func TestNode_GetKeyValuePairsAccNotFoundShouldReturnEmpty(t *testing.T) {
 		GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 			return nil, nil, state.NewErrAccountNotFoundAtBlock(dummyBlockInfo.forProcessing())
 		},
-		RecreateTrieCalled: func(_ []byte) error {
+		RecreateTrieCalled: func(_ common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -477,7 +479,7 @@ func TestNode_GetKeyValuePairs(t *testing.T) {
 	accDB.GetAccountWithBlockInfoCalled = func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 		return acc, nil, nil
 	}
-	accDB.RecreateTrieCalled = func(rootHash []byte) error {
+	accDB.RecreateTrieCalled = func(rootHash common.RootHashHolder) error {
 		return nil
 	}
 
@@ -537,7 +539,7 @@ func TestNode_GetKeyValuePairs_GetAllLeavesShouldFail(t *testing.T) {
 	accDB.GetAccountWithBlockInfoCalled = func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 		return acc, nil, nil
 	}
-	accDB.RecreateTrieCalled = func(rootHash []byte) error {
+	accDB.RecreateTrieCalled = func(rootHash common.RootHashHolder) error {
 		return nil
 	}
 
@@ -591,7 +593,7 @@ func TestNode_GetKeyValuePairsContextShouldTimeout(t *testing.T) {
 	accDB.GetAccountWithBlockInfoCalled = func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 		return acc, nil, nil
 	}
-	accDB.RecreateTrieCalled = func(rootHash []byte) error {
+	accDB.RecreateTrieCalled = func(rootHash common.RootHashHolder) error {
 		return nil
 	}
 
@@ -630,7 +632,7 @@ func TestNode_GetValueForKeyAccNotFoundShouldReturnEmpty(t *testing.T) {
 		GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 			return nil, nil, state.NewErrAccountNotFoundAtBlock(dummyBlockInfo.forProcessing())
 		},
-		RecreateTrieCalled: func(_ []byte) error {
+		RecreateTrieCalled: func(_ common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -673,7 +675,7 @@ func TestNode_GetValueForKey(t *testing.T) {
 		GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 			return acc, nil, nil
 		},
-		RecreateTrieCalled: func(_ []byte) error {
+		RecreateTrieCalled: func(_ common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -712,7 +714,7 @@ func TestNode_GetESDTDataAccNotFoundShouldReturnEmpty(t *testing.T) {
 		GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 			return nil, nil, state.NewErrAccountNotFoundAtBlock(dummyBlockInfo.forProcessing())
 		},
-		RecreateTrieCalled: func(_ []byte) error {
+		RecreateTrieCalled: func(_ common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -755,7 +757,7 @@ func TestNode_GetESDTData(t *testing.T) {
 		GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 			return acc, nil, nil
 		},
-		RecreateTrieCalled: func(_ []byte) error {
+		RecreateTrieCalled: func(_ common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -810,7 +812,7 @@ func TestNode_GetESDTDataForNFT(t *testing.T) {
 		GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 			return acc, nil, nil
 		},
-		RecreateTrieCalled: func(_ []byte) error {
+		RecreateTrieCalled: func(_ common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -870,7 +872,7 @@ func TestNode_GetAllESDTTokens(t *testing.T) {
 		})
 
 	accDB := &stateMock.AccountsStub{
-		RecreateTrieCalled: func(rootHash []byte) error {
+		RecreateTrieCalled: func(rootHash common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -927,7 +929,7 @@ func TestNode_GetAllESDTTokens_GetAllLeavesShouldFail(t *testing.T) {
 		})
 
 	accDB := &stateMock.AccountsStub{
-		RecreateTrieCalled: func(rootHash []byte) error {
+		RecreateTrieCalled: func(rootHash common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -983,7 +985,7 @@ func TestNode_GetAllESDTTokensContextShouldTimeout(t *testing.T) {
 		})
 
 	accDB := &stateMock.AccountsStub{
-		RecreateTrieCalled: func(rootHash []byte) error {
+		RecreateTrieCalled: func(rootHash common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -1026,7 +1028,7 @@ func TestNode_GetAllESDTsAccNotFoundShouldReturnEmpty(t *testing.T) {
 		GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 			return nil, nil, state.NewErrAccountNotFoundAtBlock(dummyBlockInfo.forProcessing())
 		},
-		RecreateTrieCalled: func(_ []byte) error {
+		RecreateTrieCalled: func(_ common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -1079,6 +1081,21 @@ func TestNode_GetAllESDTTokensShouldReturnEsdtAndFormattedNft(t *testing.T) {
 	nftData := &esdt.ESDigitalToken{Type: uint32(core.NonFungible), Value: big.NewInt(10), TokenMetaData: nftMetaData}
 	marshalledNftData, _ := getMarshalizer().Marshal(nftData)
 
+	dynamicNft := "TCKR-abcdef"
+	dynamicNftNonce := big.NewInt(100)
+	dynamicNftKey := []byte(core.ProtectedKeyPrefix + core.ESDTKeyIdentifier + dynamicNft)
+	dynamicNftKeyWithBytes := append(dynamicNftKey, dynamicNftNonce.Bytes()...)
+	dynamicNftSuffix := append(dynamicNftKeyWithBytes, acc.AddressBytes()...)
+	dynamicNftData := &esdt.ESDigitalToken{
+		Type:  uint32(core.DynamicNFT),
+		Value: big.NewInt(0),
+		TokenMetaData: &esdt.MetaData{
+			Nonce: dynamicNftNonce.Uint64(),
+			URIs:  [][]byte{[]byte("https://example.com/dynamic-nft")},
+		},
+	}
+	marshalledDynamicNftData, _ := getMarshalizer().Marshal(dynamicNftData)
+
 	esdtStorageStub := &testscommon.EsdtStorageHandlerStub{
 		GetESDTNFTTokenOnDestinationWithCustomSystemAccountCalled: func(acnt vmcommon.UserAccountHandler, esdtTokenKey []byte, nonce uint64, _ vmcommon.UserAccountHandler) (*esdt.ESDigitalToken, bool, error) {
 			switch string(esdtTokenKey) {
@@ -1086,6 +1103,8 @@ func TestNode_GetAllESDTTokensShouldReturnEsdtAndFormattedNft(t *testing.T) {
 				return esdtData, false, nil
 			case string(nftKey):
 				return nftData, false, nil
+			case string(dynamicNftKey):
+				return dynamicNftData, false, nil
 			default:
 				return nil, false, nil
 			}
@@ -1102,6 +1121,10 @@ func TestNode_GetAllESDTTokensShouldReturnEsdtAndFormattedNft(t *testing.T) {
 
 					trieLeaf = keyValStorage.NewKeyValStorage(nftKey, append(marshalledNftData, nftSuffix...))
 					leavesChannels.LeavesChan <- trieLeaf
+
+					trieLeaf = keyValStorage.NewKeyValStorage(dynamicNftKey, append(marshalledDynamicNftData, dynamicNftSuffix...))
+					leavesChannels.LeavesChan <- trieLeaf
+
 					wg.Done()
 					close(leavesChannels.LeavesChan)
 					leavesChannels.ErrChan.Close()
@@ -1117,7 +1140,7 @@ func TestNode_GetAllESDTTokensShouldReturnEsdtAndFormattedNft(t *testing.T) {
 		})
 
 	accDB := &stateMock.AccountsStub{
-		RecreateTrieCalled: func(rootHash []byte) error {
+		RecreateTrieCalled: func(rootHash common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -1159,7 +1182,10 @@ func TestNode_GetAllIssuedESDTs(t *testing.T) {
 	acc := createAcc([]byte("newaddress"))
 	esdtToken := []byte("TCK-RANDOM")
 	sftToken := []byte("SFT-RANDOM")
+	sftTokenDynamic := []byte("SFT-Dynamic")
 	nftToken := []byte("NFT-RANDOM")
+	nftTokenV2 := []byte("NFT-RANDOM-V2")
+	nftTokenDynamic := []byte("NFT-Dynamic")
 
 	esdtData := &systemSmartContracts.ESDTDataV2{TokenName: []byte("fungible"), TokenType: []byte(core.FungibleESDT)}
 	marshalledData, _ := getMarshalizer().Marshal(esdtData)
@@ -1169,13 +1195,28 @@ func TestNode_GetAllIssuedESDTs(t *testing.T) {
 	sftMarshalledData, _ := getMarshalizer().Marshal(sftData)
 	_ = acc.SaveKeyValue(sftToken, sftMarshalledData)
 
+	sftDataDynamic := &systemSmartContracts.ESDTDataV2{TokenName: []byte("semi fungible dynamic"), TokenType: []byte(core.DynamicSFTESDT)}
+	sftMarshalledDataDynamic, _ := getMarshalizer().Marshal(sftDataDynamic)
+	_ = acc.SaveKeyValue(sftTokenDynamic, sftMarshalledDataDynamic)
+
 	nftData := &systemSmartContracts.ESDTDataV2{TokenName: []byte("non fungible"), TokenType: []byte(core.NonFungibleESDT)}
 	nftMarshalledData, _ := getMarshalizer().Marshal(nftData)
 	_ = acc.SaveKeyValue(nftToken, nftMarshalledData)
 
+	nftData2 := &systemSmartContracts.ESDTDataV2{TokenName: []byte("non fungible v2"), TokenType: []byte(core.NonFungibleESDT)}
+	nftMarshalledData2, _ := getMarshalizer().Marshal(nftData2)
+	_ = acc.SaveKeyValue(nftTokenV2, nftMarshalledData2)
+
+	nftDataDynamic := &systemSmartContracts.ESDTDataV2{TokenName: []byte("non fungible dynamic"), TokenType: []byte(core.DynamicNFTESDT)}
+	nftMarshalledDataDyamic, _ := getMarshalizer().Marshal(nftDataDynamic)
+	_ = acc.SaveKeyValue(nftTokenDynamic, nftMarshalledDataDyamic)
+
 	esdtSuffix := append(esdtToken, acc.AddressBytes()...)
 	nftSuffix := append(nftToken, acc.AddressBytes()...)
+	nftSuffix2 := append(nftTokenV2, acc.AddressBytes()...)
+	nftDynamicSuffix := append(nftTokenDynamic, acc.AddressBytes()...)
 	sftSuffix := append(sftToken, acc.AddressBytes()...)
+	sftDynamicSuffix := append(sftTokenDynamic, acc.AddressBytes()...)
 
 	acc.SetDataTrie(
 		&trieMock.TrieStub{
@@ -1186,9 +1227,16 @@ func TestNode_GetAllIssuedESDTs(t *testing.T) {
 
 					trieLeaf, _ = tlp.ParseLeaf(sftToken, append(sftMarshalledData, sftSuffix...), core.NotSpecified)
 					leavesChannels.LeavesChan <- trieLeaf
+					trieLeaf, _ = tlp.ParseLeaf(sftTokenDynamic, append(sftMarshalledDataDynamic, sftDynamicSuffix...), core.NotSpecified)
+					leavesChannels.LeavesChan <- trieLeaf
 
 					trieLeaf, _ = tlp.ParseLeaf(nftToken, append(nftMarshalledData, nftSuffix...), core.NotSpecified)
 					leavesChannels.LeavesChan <- trieLeaf
+					trieLeaf, _ = tlp.ParseLeaf(nftTokenV2, append(nftMarshalledData2, nftSuffix2...), core.NotSpecified)
+					leavesChannels.LeavesChan <- trieLeaf
+					trieLeaf, _ = tlp.ParseLeaf(nftTokenDynamic, append(nftMarshalledDataDyamic, nftDynamicSuffix...), core.NotSpecified)
+					leavesChannels.LeavesChan <- trieLeaf
+
 					close(leavesChannels.LeavesChan)
 					leavesChannels.ErrChan.Close()
 				}()
@@ -1201,7 +1249,7 @@ func TestNode_GetAllIssuedESDTs(t *testing.T) {
 		})
 
 	accDB := &stateMock.AccountsStub{
-		RecreateTrieCalled: func(rootHash []byte) error {
+		RecreateTrieCalled: func(rootHash common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -1236,17 +1284,27 @@ func TestNode_GetAllIssuedESDTs(t *testing.T) {
 
 	value, err = n.GetAllIssuedESDTs(core.SemiFungibleESDT, context.Background())
 	assert.Nil(t, err)
-	assert.Equal(t, 1, len(value))
+	assert.Equal(t, 2, len(value))
 	assert.Equal(t, string(sftToken), value[0])
+	assert.Equal(t, string(sftTokenDynamic), value[1])
 
 	value, err = n.GetAllIssuedESDTs(core.NonFungibleESDT, context.Background())
 	assert.Nil(t, err)
-	assert.Equal(t, 1, len(value))
+	assert.Equal(t, 3, len(value)) // for both versions
 	assert.Equal(t, string(nftToken), value[0])
+	assert.Equal(t, string(nftTokenV2), value[1])
+	assert.Equal(t, string(nftTokenDynamic), value[2])
+
+	value, err = n.GetAllIssuedESDTs(core.NonFungibleESDTv2, context.Background())
+	assert.Nil(t, err)
+	assert.Equal(t, 3, len(value)) // for both versions
+	assert.Equal(t, string(nftToken), value[0])
+	assert.Equal(t, string(nftTokenV2), value[1])
+	assert.Equal(t, string(nftTokenDynamic), value[2])
 
 	value, err = n.GetAllIssuedESDTs("", context.Background())
 	assert.Nil(t, err)
-	assert.Equal(t, 3, len(value))
+	assert.Equal(t, 6, len(value))
 }
 
 func TestNode_GetESDTsWithRole(t *testing.T) {
@@ -1287,7 +1345,7 @@ func TestNode_GetESDTsWithRole(t *testing.T) {
 		})
 
 	accDB := &stateMock.AccountsStub{
-		RecreateTrieCalled: func(rootHash []byte) error {
+		RecreateTrieCalled: func(rootHash common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -1366,7 +1424,7 @@ func TestNode_GetESDTsRoles(t *testing.T) {
 		})
 
 	accDB := &stateMock.AccountsStub{
-		RecreateTrieCalled: func(rootHash []byte) error {
+		RecreateTrieCalled: func(rootHash common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -1432,7 +1490,7 @@ func TestNode_GetNFTTokenIDsRegisteredByAddress(t *testing.T) {
 	)
 
 	accDB := &stateMock.AccountsStub{
-		RecreateTrieCalled: func(rootHash []byte) error {
+		RecreateTrieCalled: func(rootHash common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -1489,7 +1547,7 @@ func TestNode_GetNFTTokenIDsRegisteredByAddressContextShouldTimeout(t *testing.T
 	)
 
 	accDB := &stateMock.AccountsStub{
-		RecreateTrieCalled: func(rootHash []byte) error {
+		RecreateTrieCalled: func(rootHash common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -2179,7 +2237,7 @@ func TestCreateTransaction_SignatureLengthChecks(t *testing.T) {
 	coreComponents.VmMarsh = getMarshalizer()
 	coreComponents.TxMarsh = getMarshalizer()
 	coreComponents.Hash = getHasher()
-	coreComponents.EconomicsHandler = &economicsmocks.EconomicsHandlerStub{
+	coreComponents.EconomicsHandler = &economicsmocks.EconomicsHandlerMock{
 		GenesisTotalSupplyCalled: func() *big.Int {
 			str := strings.Repeat("1", maxValueLength)
 			bi := big.NewInt(0)
@@ -2249,7 +2307,7 @@ func TestCreateTransaction_SenderLengthChecks(t *testing.T) {
 	coreComponents.ChainIdCalled = func() string {
 		return chainID
 	}
-	coreComponents.EconomicsHandler = &economicsmocks.EconomicsHandlerStub{
+	coreComponents.EconomicsHandler = &economicsmocks.EconomicsHandlerMock{
 		GenesisTotalSupplyCalled: func() *big.Int {
 			str := strings.Repeat("1", maxLength)
 			bi := big.NewInt(0)
@@ -2310,7 +2368,7 @@ func TestCreateTransaction_ReceiverLengthChecks(t *testing.T) {
 	coreComponents.ChainIdCalled = func() string {
 		return chainID
 	}
-	coreComponents.EconomicsHandler = &economicsmocks.EconomicsHandlerStub{
+	coreComponents.EconomicsHandler = &economicsmocks.EconomicsHandlerMock{
 		GenesisTotalSupplyCalled: func() *big.Int {
 			str := strings.Repeat("1", maxLength)
 			bi := big.NewInt(0)
@@ -2370,7 +2428,7 @@ func TestCreateTransaction_TooBigSenderUsernameShouldErr(t *testing.T) {
 	coreComponents.ChainIdCalled = func() string {
 		return chainID
 	}
-	coreComponents.EconomicsHandler = &economicsmocks.EconomicsHandlerStub{
+	coreComponents.EconomicsHandler = &economicsmocks.EconomicsHandlerMock{
 		GenesisTotalSupplyCalled: func() *big.Int {
 			str := strings.Repeat("1", maxLength)
 			bi := big.NewInt(0)
@@ -2423,7 +2481,7 @@ func TestCreateTransaction_TooBigReceiverUsernameShouldErr(t *testing.T) {
 	coreComponents.ChainIdCalled = func() string {
 		return chainID
 	}
-	coreComponents.EconomicsHandler = &economicsmocks.EconomicsHandlerStub{
+	coreComponents.EconomicsHandler = &economicsmocks.EconomicsHandlerMock{
 		GenesisTotalSupplyCalled: func() *big.Int {
 			str := strings.Repeat("1", maxLength)
 			bi := big.NewInt(0)
@@ -2476,7 +2534,7 @@ func TestCreateTransaction_DataFieldSizeExceedsMaxShouldErr(t *testing.T) {
 	coreComponents.ChainIdCalled = func() string {
 		return chainID
 	}
-	coreComponents.EconomicsHandler = &economicsmocks.EconomicsHandlerStub{
+	coreComponents.EconomicsHandler = &economicsmocks.EconomicsHandlerMock{
 		GenesisTotalSupplyCalled: func() *big.Int {
 			str := strings.Repeat("1", maxLength)
 			bi := big.NewInt(0)
@@ -2529,7 +2587,7 @@ func TestCreateTransaction_TooLargeValueFieldShouldErr(t *testing.T) {
 	coreComponents.ChainIdCalled = func() string {
 		return chainID
 	}
-	coreComponents.EconomicsHandler = &economicsmocks.EconomicsHandlerStub{
+	coreComponents.EconomicsHandler = &economicsmocks.EconomicsHandlerMock{
 		GenesisTotalSupplyCalled: func() *big.Int {
 			str := strings.Repeat("1", maxLength)
 			bi := big.NewInt(0)
@@ -2840,7 +2898,7 @@ func TestCreateTransaction_TxSignedWithHashShouldErrVersionShoudBe2(t *testing.T
 		return chainID
 	}
 
-	feeHandler := &economicsmocks.EconomicsHandlerStub{
+	feeHandler := &economicsmocks.EconomicsHandlerMock{
 		CheckValidityTxValuesCalled: func(tx data.TransactionWithFeeHandler) error {
 			return nil
 		},
@@ -2930,7 +2988,7 @@ func TestCreateTransaction_TxSignedWithHashNoEnabledShouldErr(t *testing.T) {
 		},
 	}
 
-	feeHandler := &economicsmocks.EconomicsHandlerStub{
+	feeHandler := &economicsmocks.EconomicsHandlerMock{
 		CheckValidityTxValuesCalled: func(tx data.TransactionWithFeeHandler) error {
 			return nil
 		},
@@ -3004,15 +3062,63 @@ func TestValidateTransaction_ShouldAdaptAccountNotFoundError(t *testing.T) {
 		node.WithCryptoComponents(getDefaultCryptoComponents()),
 	)
 
-	tx := &transaction.Transaction{
-		SndAddr:   bytes.Repeat([]byte("1"), 32),
-		RcvAddr:   bytes.Repeat([]byte("1"), 32),
-		Value:     big.NewInt(37),
-		Signature: []byte("signature"),
-		ChainID:   []byte("chainID"),
-	}
-	err := n.ValidateTransaction(tx)
-	require.Equal(t, "insufficient funds for address erd1xycnzvf3xycnzvf3xycnzvf3xycnzvf3xycnzvf3xycnzvf3xycspcqad6", err.Error())
+	t.Run("normal tx", func(t *testing.T) {
+		tx := &transaction.Transaction{
+			SndAddr:   bytes.Repeat([]byte("1"), 32),
+			RcvAddr:   bytes.Repeat([]byte("1"), 32),
+			Value:     big.NewInt(37),
+			Signature: []byte("signature"),
+			ChainID:   []byte("chainID"),
+		}
+
+		err := n.ValidateTransaction(tx)
+		require.Equal(t, "insufficient funds for address erd1xycnzvf3xycnzvf3xycnzvf3xycnzvf3xycnzvf3xycnzvf3xycspcqad6", err.Error())
+	})
+	t.Run("relayed tx v3, no funds for sender", func(t *testing.T) {
+		tx := &transaction.Transaction{
+			SndAddr:          bytes.Repeat([]byte("1"), 32),
+			RcvAddr:          bytes.Repeat([]byte("1"), 32),
+			Value:            big.NewInt(37),
+			Signature:        []byte("sSignature"),
+			RelayerAddr:      bytes.Repeat([]byte("2"), 32),
+			RelayerSignature: []byte("rSignature"),
+			ChainID:          []byte("chainID"),
+		}
+		err := n.ValidateTransaction(tx)
+		require.Equal(t, "insufficient funds for address erd1xycnzvf3xycnzvf3xycnzvf3xycnzvf3xycnzvf3xycnzvf3xycspcqad6", err.Error())
+	})
+	t.Run("relayed tx v3, no funds for relayer", func(t *testing.T) {
+		tx := &transaction.Transaction{
+			SndAddr:          bytes.Repeat([]byte("1"), 32),
+			RcvAddr:          bytes.Repeat([]byte("1"), 32),
+			Value:            big.NewInt(37),
+			Signature:        []byte("sSignature"),
+			RelayerAddr:      bytes.Repeat([]byte("2"), 32),
+			RelayerSignature: []byte("rSignature"),
+			ChainID:          []byte("chainID"),
+		}
+
+		stateComp := getDefaultStateComponents()
+		stateComp.AccountsAPI = &stateMock.AccountsStub{
+			GetExistingAccountCalled: func(addressContainer []byte) (vmcommon.AccountHandler, error) {
+				if bytes.Equal(addressContainer, tx.SndAddr) {
+					return &stateMock.UserAccountStub{}, nil
+				}
+
+				return nil, errors.New("account not found")
+			},
+		}
+		nLocal, _ := node.NewNode(
+			node.WithCoreComponents(getDefaultCoreComponents()),
+			node.WithBootstrapComponents(getDefaultBootstrapComponents()),
+			node.WithProcessComponents(getDefaultProcessComponents()),
+			node.WithStateComponents(stateComp),
+			node.WithCryptoComponents(getDefaultCryptoComponents()),
+		)
+
+		err := nLocal.ValidateTransaction(tx)
+		require.Equal(t, "insufficient funds for address erd1xgeryv3jxgeryv3jxgeryv3jxgeryv3jxgeryv3jxgeryv3jxgeqvw86cj", err.Error())
+	})
 }
 
 func TestCreateShardedStores_NilShardCoordinatorShouldError(t *testing.T) {
@@ -3369,7 +3475,7 @@ func TestNode_GetAccountAccNotFoundShouldReturnEmpty(t *testing.T) {
 		GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 			return nil, nil, state.NewErrAccountNotFoundAtBlock(dummyBlockInfo.forProcessing())
 		},
-		RecreateTrieCalled: func(_ []byte) error {
+		RecreateTrieCalled: func(_ common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -3416,7 +3522,7 @@ func TestNode_GetAccountAccountExistsShouldReturn(t *testing.T) {
 		GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 			return accnt, nil, nil
 		},
-		RecreateTrieCalled: func(rootHash []byte) error {
+		RecreateTrieCalled: func(rootHash common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -3465,7 +3571,7 @@ func TestNode_GetAccountAccountWithKeysErrorShouldFail(t *testing.T) {
 		GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 			return accnt, nil, nil
 		},
-		RecreateTrieCalled: func(rootHash []byte) error {
+		RecreateTrieCalled: func(options common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -3515,7 +3621,7 @@ func TestNode_GetAccountAccountWithKeysShouldWork(t *testing.T) {
 		GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 			return accnt, nil, nil
 		},
-		RecreateTrieCalled: func(rootHash []byte) error {
+		RecreateTrieCalled: func(options common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -3534,6 +3640,54 @@ func TestNode_GetAccountAccountWithKeysShouldWork(t *testing.T) {
 	require.Equal(t, 2, len(recovAccnt.Pairs))
 	require.Equal(t, hex.EncodeToString(v1), recovAccnt.Pairs[hex.EncodeToString(k1)])
 	require.Equal(t, hex.EncodeToString(v2), recovAccnt.Pairs[hex.EncodeToString(k2)])
+}
+
+func TestNode_GetAccountAccountWithKeysNeverUsedAccountShouldWork(t *testing.T) {
+	t.Parallel()
+
+	accDB := &stateMock.AccountsStub{
+		GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
+			return nil, nil, nil
+		},
+		RecreateTrieCalled: func(options common.RootHashHolder) error {
+			return nil
+		},
+	}
+
+	n := getNodeWithAccount(accDB)
+
+	recovAccnt, blockInfo, err := n.GetAccountWithKeys(testscommon.TestAddressBob, api.AccountQueryOptions{WithKeys: true}, context.Background())
+
+	require.Nil(t, err)
+	require.Equal(t, uint64(0), recovAccnt.Nonce)
+	require.Equal(t, testscommon.TestAddressBob, recovAccnt.Address)
+	require.Equal(t, api.BlockInfo{}, blockInfo)
+}
+
+func TestNode_GetAccountAccountWithKeysNilDataTrieShouldWork(t *testing.T) {
+	t.Parallel()
+
+	accnt := createAcc(testscommon.TestPubKeyBob)
+	accnt.SetDataTrie(nil)
+	_ = accnt.AddToBalance(big.NewInt(1))
+
+	accDB := &stateMock.AccountsStub{
+		GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
+			return accnt, nil, nil
+		},
+		RecreateTrieCalled: func(options common.RootHashHolder) error {
+			return nil
+		},
+	}
+
+	n := getNodeWithAccount(accDB)
+
+	recovAccnt, blockInfo, err := n.GetAccountWithKeys(testscommon.TestAddressBob, api.AccountQueryOptions{WithKeys: true}, context.Background())
+
+	require.Nil(t, err)
+	require.Equal(t, uint64(0), recovAccnt.Nonce)
+	require.Equal(t, testscommon.TestAddressBob, recovAccnt.Address)
+	require.Equal(t, api.BlockInfo{}, blockInfo)
 }
 
 func getNodeWithAccount(accDB *stateMock.AccountsStub) *node.Node {
@@ -4165,7 +4319,7 @@ func TestNode_getProofErrWhenComputingProof(t *testing.T) {
 				},
 			}, nil
 		},
-		RecreateTrieCalled: func(_ []byte) error {
+		RecreateTrieCalled: func(_ common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -4547,7 +4701,6 @@ func TestNode_Getters(t *testing.T) {
 	heartbeatComponents := &factoryMock.HeartbeatV2ComponentsStub{}
 	networkComponents := getDefaultNetworkComponents()
 	processComponents := getDefaultProcessComponents()
-	consensusGroupSize := 10
 
 	n, err := node.NewNode(
 		node.WithCoreComponents(coreComponents),
@@ -4559,7 +4712,6 @@ func TestNode_Getters(t *testing.T) {
 		node.WithHeartbeatV2Components(heartbeatComponents),
 		node.WithNetworkComponents(networkComponents),
 		node.WithProcessComponents(processComponents),
-		node.WithConsensusGroupSize(consensusGroupSize),
 		node.WithImportMode(true),
 	)
 	require.Nil(t, err)
@@ -4574,7 +4726,6 @@ func TestNode_Getters(t *testing.T) {
 	assert.True(t, n.GetHeartbeatV2Components() == heartbeatComponents)
 	assert.True(t, n.GetNetworkComponents() == networkComponents)
 	assert.True(t, n.GetProcessComponents() == processComponents)
-	assert.Equal(t, consensusGroupSize, n.GetConsensusGroupSize())
 	assert.True(t, n.IsInImportMode())
 }
 
@@ -4588,7 +4739,10 @@ func TestNode_GetEpochStartDataAPI(t *testing.T) {
 
 	dataComponents := getDefaultDataComponents()
 	blockchain := dataComponents.BlockChain.(*testscommon.ChainHandlerStub)
+
 	timestamp := uint64(778899)
+	expTimeStampMs := common.ConvertTimeStampSecToMs(timestamp)
+
 	shardID := uint32(2)
 	blockchain.GetGenesisHeaderCalled = func() data.HeaderHandler {
 		return &block.Header{
@@ -4622,6 +4776,7 @@ func TestNode_GetEpochStartDataAPI(t *testing.T) {
 			Nonce:             0,
 			Round:             0,
 			Timestamp:         int64(timestamp),
+			TimestampMs:       int64(expTimeStampMs),
 			Epoch:             0,
 			Shard:             shardID,
 			PrevBlockHash:     hex.EncodeToString(prevHash),
@@ -4671,6 +4826,7 @@ func TestNode_GetEpochStartDataAPI(t *testing.T) {
 			Nonce:             nonce,
 			Round:             round,
 			Timestamp:         int64(timestamp),
+			TimestampMs:       int64(expTimeStampMs),
 			Epoch:             epoch,
 			Shard:             core.MetachainShardId,
 			PrevBlockHash:     hex.EncodeToString(prevHash),
@@ -4721,6 +4877,7 @@ func TestNode_GetEpochStartDataAPI(t *testing.T) {
 			Nonce:             nonce,
 			Round:             round,
 			Timestamp:         int64(timestamp),
+			TimestampMs:       int64(expTimeStampMs),
 			Epoch:             epoch,
 			Shard:             shardID,
 			PrevBlockHash:     hex.EncodeToString(prevHash),
@@ -4851,7 +5008,7 @@ func TestNode_GetGuardianData(t *testing.T) {
 		GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 			return testAccount, nil, nil
 		},
-		RecreateTrieCalled: func(_ []byte) error {
+		RecreateTrieCalled: func(_ common.RootHashHolder) error {
 			return nil
 		},
 	}
@@ -4892,7 +5049,7 @@ func TestNode_GetGuardianData(t *testing.T) {
 			GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 				return testAccount, nil, nil
 			},
-			RecreateTrieCalled: func(_ []byte) error {
+			RecreateTrieCalled: func(_ common.RootHashHolder) error {
 				return nil
 			},
 		}
@@ -4920,7 +5077,7 @@ func TestNode_GetGuardianData(t *testing.T) {
 			GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 				return nil, nil, state.NewErrAccountNotFoundAtBlock(providedBlockInfo)
 			},
-			RecreateTrieCalled: func(_ []byte) error {
+			RecreateTrieCalled: func(_ common.RootHashHolder) error {
 				return nil
 			},
 		}
@@ -5038,7 +5195,7 @@ func TestNode_GetGuardianData(t *testing.T) {
 			GetAccountWithBlockInfoCalled: func(address []byte, options common.RootHashHolder) (vmcommon.AccountHandler, common.BlockInfo, error) {
 				return acc, nil, nil
 			},
-			RecreateTrieCalled: func(_ []byte) error {
+			RecreateTrieCalled: func(_ common.RootHashHolder) error {
 				return nil
 			},
 		}
@@ -5199,18 +5356,20 @@ func getDefaultCoreComponents() *nodeMockFactory.CoreComponentsMock {
 		MinTransactionVersionCalled: func() uint32 {
 			return 1
 		},
-		WDTimer:               &testscommon.WatchdogMock{},
-		Alarm:                 &testscommon.AlarmSchedulerStub{},
-		NtpTimer:              &testscommon.SyncTimerStub{},
-		RoundHandlerField:     &testscommon.RoundHandlerMock{},
-		EconomicsHandler:      &economicsmocks.EconomicsHandlerMock{},
-		APIEconomicsHandler:   &economicsmocks.EconomicsHandlerMock{},
-		RatingsConfig:         &testscommon.RatingsInfoMock{},
-		RatingHandler:         &testscommon.RaterMock{},
-		NodesConfig:           &genesisMocks.NodesSetupStub{},
-		StartTime:             time.Time{},
-		EpochChangeNotifier:   &epochNotifier.EpochNotifierStub{},
-		TxVersionCheckHandler: versioning.NewTxVersionChecker(0),
+		WDTimer:                  &testscommon.WatchdogMock{},
+		Alarm:                    &testscommon.AlarmSchedulerStub{},
+		NtpTimer:                 &testscommon.SyncTimerStub{},
+		RoundHandlerField:        &testscommon.RoundHandlerMock{},
+		EconomicsHandler:         &economicsmocks.EconomicsHandlerMock{},
+		APIEconomicsHandler:      &economicsmocks.EconomicsHandlerMock{},
+		RatingsConfig:            &testscommon.RatingsInfoMock{},
+		RatingHandler:            &testscommon.RaterMock{},
+		NodesConfig:              &genesisMocks.NodesSetupStub{},
+		StartTime:                time.Time{},
+		EpochChangeNotifier:      &epochNotifier.EpochNotifierStub{},
+		TxVersionCheckHandler:    versioning.NewTxVersionChecker(0),
+		EnableEpochsHandlerField: enableEpochsHandlerMock.NewEnableEpochsHandlerStub(common.RelayedTransactionsV3Flag),
+		FieldsSizeCheckerField:   &testscommon.FieldsSizeCheckerMock{},
 	}
 }
 
@@ -5230,7 +5389,7 @@ func getDefaultProcessComponents() *factoryMock.ProcessComponentsMock {
 		BlockProcess:                         &testscommon.BlockProcessorStub{},
 		BlackListHdl:                         &testscommon.TimeCacheStub{},
 		BootSore:                             &mock.BootstrapStorerMock{},
-		HeaderSigVerif:                       &mock.HeaderSigVerifierStub{},
+		HeaderSigVerif:                       &consensus.HeaderSigVerifierMock{},
 		HeaderIntegrVerif:                    &mock.HeaderIntegrityVerifierStub{},
 		ValidatorStatistics:                  &testscommon.ValidatorStatisticsProcessorStub{},
 		ValidatorProvider:                    &stakingcommon.ValidatorsProviderStub{},
@@ -5246,6 +5405,7 @@ func getDefaultProcessComponents() *factoryMock.ProcessComponentsMock {
 		TxsSenderHandlerField:                &txsSenderMock.TxsSenderHandlerMock{},
 		ScheduledTxsExecutionHandlerInternal: &testscommon.ScheduledTxsExecutionStub{},
 		HistoryRepositoryInternal:            &dblookupext.HistoryRepositoryStub{},
+		BlockchainHookField:                  &testscommon.BlockChainHookStub{},
 	}
 }
 

@@ -19,7 +19,6 @@ import (
 	vmcommonBuiltInFunctions "github.com/multiversx/mx-chain-vm-common-go/builtInFunctions"
 	"github.com/multiversx/mx-chain-vm-common-go/parsers"
 	wasmConfig "github.com/multiversx/mx-chain-vm-go/config"
-	ipcNodePart1p2 "github.com/multiversx/mx-chain-vm-v1_2-go/ipc/nodepart"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,6 +31,7 @@ func makeVMConfig() config.VirtualMachineConfig {
 			{StartEpoch: 12, Version: "v1.3"},
 			{StartEpoch: 14, Version: "v1.4"},
 		},
+		TransferAndExecuteByUserAddresses: []string{"erd1qqqqqqqqqqqqqpgqr46jrxr6r2unaqh75ugd308dwx5vgnhwh47qtvepe3"},
 	}
 }
 
@@ -48,6 +48,7 @@ func createMockVMAccountsArguments() ArgVMContainerFactory {
 		BuiltInFunctions:    vmcommonBuiltInFunctions.NewBuiltInFunctionContainer(),
 		BlockChainHook:      &testscommon.BlockChainHookStub{},
 		Hasher:              &hashingMocks.HasherMock{},
+		PubKeyConverter:     testscommon.RealWorldBech32PubkeyConverter,
 	}
 }
 
@@ -137,6 +138,33 @@ func TestNewVMContainerFactory_NilHasherShouldErr(t *testing.T) {
 	assert.Equal(t, process.ErrNilHasher, err)
 }
 
+func TestNewVMContainerFactory_NilPubKeyConverterShouldErr(t *testing.T) {
+	args := createMockVMAccountsArguments()
+	args.PubKeyConverter = nil
+	vmf, err := NewVMContainerFactory(args)
+
+	assert.Nil(t, vmf)
+	assert.Equal(t, process.ErrNilPubkeyConverter, err)
+}
+
+func TestNewVMContainerFactory_EmptyOpcodeAddressListErr(t *testing.T) {
+	args := createMockVMAccountsArguments()
+	args.Config.TransferAndExecuteByUserAddresses = nil
+	vmf, err := NewVMContainerFactory(args)
+
+	assert.Nil(t, vmf)
+	assert.Equal(t, process.ErrTransferAndExecuteByUserAddressesAreNil, err)
+}
+
+func TestNewVMContainerFactory_WrongAddressErr(t *testing.T) {
+	args := createMockVMAccountsArguments()
+	args.Config.TransferAndExecuteByUserAddresses = []string{"just"}
+	vmf, err := NewVMContainerFactory(args)
+
+	assert.Nil(t, vmf)
+	assert.Equal(t, err.Error(), "invalid bech32 string length 4")
+}
+
 func TestNewVMContainerFactory_OkValues(t *testing.T) {
 	if runtime.GOARCH == "arm64" {
 		t.Skip("skipping test on arm64")
@@ -175,6 +203,9 @@ func TestVmContainerFactory_Create(t *testing.T) {
 
 	acc := vmf.BlockChainHookImpl()
 	assert.NotNil(t, acc)
+
+	assert.Equal(t, len(vmf.mapOpcodeAddressIsAllowed), 1)
+	assert.Equal(t, len(vmf.mapOpcodeAddressIsAllowed[managedMultiTransferESDTNFTExecuteByUser]), 1)
 }
 
 func TestVmContainerFactory_ResolveWasmVMVersion(t *testing.T) {
@@ -203,35 +234,27 @@ func TestVmContainerFactory_ResolveWasmVMVersion(t *testing.T) {
 		_ = container.Close()
 	}()
 	require.Equal(t, "v1.2", getWasmVMVersion(t, container))
-	require.False(t, isOutOfProcess(t, container))
 
 	epochNotifierInstance.CheckEpoch(makeHeaderHandlerStub(1))
 	require.Equal(t, "v1.2", getWasmVMVersion(t, container))
-	require.False(t, isOutOfProcess(t, container))
 
 	epochNotifierInstance.CheckEpoch(makeHeaderHandlerStub(6))
 	require.Equal(t, "v1.2", getWasmVMVersion(t, container))
-	require.False(t, isOutOfProcess(t, container))
 
 	epochNotifierInstance.CheckEpoch(makeHeaderHandlerStub(10))
 	require.Equal(t, "v1.2", getWasmVMVersion(t, container))
-	require.False(t, isOutOfProcess(t, container))
 
 	epochNotifierInstance.CheckEpoch(makeHeaderHandlerStub(11))
 	require.Equal(t, "v1.2", getWasmVMVersion(t, container))
-	require.False(t, isOutOfProcess(t, container))
 
 	epochNotifierInstance.CheckEpoch(makeHeaderHandlerStub(12))
 	require.Equal(t, "v1.3", getWasmVMVersion(t, container))
-	require.False(t, isOutOfProcess(t, container))
 
 	epochNotifierInstance.CheckEpoch(makeHeaderHandlerStub(13))
 	require.Equal(t, "v1.3", getWasmVMVersion(t, container))
-	require.False(t, isOutOfProcess(t, container))
 
 	epochNotifierInstance.CheckEpoch(makeHeaderHandlerStub(20))
 	require.Equal(t, "v1.4", getWasmVMVersion(t, container))
-	require.False(t, isOutOfProcess(t, container))
 
 	require.Equal(t, numCalled, 1)
 }
@@ -240,15 +263,6 @@ func makeHeaderHandlerStub(epoch uint32) data.HeaderHandler {
 	return &testscommon.HeaderHandlerStub{
 		EpochField: epoch,
 	}
-}
-
-func isOutOfProcess(t testing.TB, container process.VirtualMachinesContainer) bool {
-	vm, err := container.Get(factory.WasmVirtualMachine)
-	require.Nil(t, err)
-	require.NotNil(t, vm)
-
-	_, ok := vm.(*ipcNodePart1p2.VMDriver)
-	return ok
 }
 
 func getWasmVMVersion(t testing.TB, container process.VirtualMachinesContainer) string {

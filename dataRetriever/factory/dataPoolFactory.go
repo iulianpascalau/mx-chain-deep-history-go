@@ -2,7 +2,6 @@ package factory
 
 import (
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/multiversx/mx-chain-core-go/core"
@@ -12,6 +11,7 @@ import (
 	"github.com/multiversx/mx-chain-go/dataRetriever"
 	"github.com/multiversx/mx-chain-go/dataRetriever/dataPool"
 	"github.com/multiversx/mx-chain-go/dataRetriever/dataPool/headersCache"
+	proofscache "github.com/multiversx/mx-chain-go/dataRetriever/dataPool/proofsCache"
 	"github.com/multiversx/mx-chain-go/dataRetriever/shardedData"
 	"github.com/multiversx/mx-chain-go/dataRetriever/txpool"
 	"github.com/multiversx/mx-chain-go/process"
@@ -54,6 +54,9 @@ func NewDataPoolFromConfig(args ArgsDataPool) (dataRetriever.PoolsHolder, error)
 	if check.IfNil(args.ShardCoordinator) {
 		return nil, dataRetriever.ErrNilShardCoordinator
 	}
+	if check.IfNil(args.Marshalizer) {
+		return nil, dataRetriever.ErrNilMarshalizer
+	}
 	if check.IfNil(args.PathManager) {
 		return nil, dataRetriever.ErrNilPathManager
 	}
@@ -62,9 +65,10 @@ func NewDataPoolFromConfig(args ArgsDataPool) (dataRetriever.PoolsHolder, error)
 
 	txPool, err := txpool.NewShardedTxPool(txpool.ArgShardedTxPool{
 		Config:         factory.GetCacherFromConfig(mainConfig.TxDataPool),
+		TxGasHandler:   args.EconomicsData,
+		Marshalizer:    args.Marshalizer,
 		NumberOfShards: args.ShardCoordinator.NumberOfShards(),
 		SelfShardID:    args.ShardCoordinator.SelfId(),
-		TxGasHandler:   args.EconomicsData,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%w while creating the cache for the transactions", err)
@@ -147,8 +151,10 @@ func NewDataPoolFromConfig(args ArgsDataPool) (dataRetriever.PoolsHolder, error)
 		return nil, fmt.Errorf("%w while creating the cache for the validator info results", err)
 	}
 
+	proofsPool := proofscache.NewProofsPool(mainConfig.ProofsPoolConfig.CleanupNonceDelta, mainConfig.ProofsPoolConfig.BucketSize)
 	currBlockTransactions := dataPool.NewCurrentBlockTransactionsPool()
 	currEpochValidatorInfo := dataPool.NewCurrentEpochValidatorInfoPool()
+
 	dataPoolArgs := dataPool.DataPoolArgs{
 		Transactions:              txPool,
 		UnsignedTransactions:      uTxPool,
@@ -164,6 +170,7 @@ func NewDataPoolFromConfig(args ArgsDataPool) (dataRetriever.PoolsHolder, error)
 		PeerAuthentications:       peerAuthPool,
 		Heartbeats:                heartbeatPool,
 		ValidatorsInfo:            validatorsInfo,
+		Proofs:                    proofsPool,
 	}
 	return dataPool.NewDataPool(dataPoolArgs)
 }
@@ -179,22 +186,12 @@ func createTrieSyncDB(args ArgsDataPool) (storage.Persister, error) {
 	shardId := core.GetShardIDString(args.ShardCoordinator.SelfId())
 	path := args.PathManager.PathForStatic(shardId, mainConfig.TrieSyncStorage.DB.FilePath)
 
-	dbConfigHandler := factory.NewDBConfigHandler(mainConfig.TrieSyncStorage.DB)
-	persisterFactory, err := factory.NewPersisterFactory(dbConfigHandler)
+	persisterFactory, err := factory.NewPersisterFactory(mainConfig.TrieSyncStorage.DB)
 	if err != nil {
 		return nil, err
 	}
 
-	if mainConfig.TrieSyncStorage.DB.UseTmpAsFilePath {
-		filePath, errTempDir := os.MkdirTemp("", "trieSyncStorage")
-		if errTempDir != nil {
-			return nil, errTempDir
-		}
-
-		path = filePath
-	}
-
-	db, err := storageunit.NewDB(persisterFactory, path)
+	db, err := persisterFactory.CreateWithRetries(path)
 	if err != nil {
 		return nil, fmt.Errorf("%w while creating the db for the trie nodes", err)
 	}

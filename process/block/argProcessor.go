@@ -6,6 +6,7 @@ import (
 	"github.com/multiversx/mx-chain-core-go/data/typeConverters"
 	"github.com/multiversx/mx-chain-core-go/hashing"
 	"github.com/multiversx/mx-chain-core-go/marshal"
+
 	nodeFactory "github.com/multiversx/mx-chain-go/cmd/node/factory"
 	"github.com/multiversx/mx-chain-go/common"
 	"github.com/multiversx/mx-chain-go/config"
@@ -28,6 +29,7 @@ type coreComponentsHolder interface {
 	EnableEpochsHandler() common.EnableEpochsHandler
 	RoundNotifier() process.RoundNotifier
 	EnableRoundsHandler() process.EnableRoundsHandler
+	EpochChangeGracePeriodHandler() common.EpochChangeGracePeriodHandler
 	RoundHandler() consensus.RoundHandler
 	EconomicsData() process.EconomicsDataHandler
 	ProcessStatusHandler() common.ProcessStatusHandler
@@ -94,6 +96,7 @@ type ArgBaseProcessor struct {
 	BlockProcessingCutoffHandler   cutoff.BlockProcessingCutoffHandler
 	ManagedPeersHolder             common.ManagedPeersHolder
 	SentSignaturesTracker          process.SentSignaturesTracker
+	StateAccessesCollector         state.StateAccessesCollector
 }
 
 // ArgShardProcessor holds all dependencies required by the process data factory in order to create

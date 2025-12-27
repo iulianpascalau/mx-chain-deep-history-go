@@ -48,6 +48,20 @@ func TestTomlParser(t *testing.T) {
 	}
 
 	cfgExpected := Config{
+		GeneralSettings: GeneralSettingsConfig{
+			ChainParametersByEpoch: []ChainParametersByEpochConfig{
+				{
+					EnableEpoch:                 0,
+					RoundDuration:               4000,
+					ShardMinNumNodes:            4,
+					ShardConsensusGroupSize:     3,
+					MetachainMinNumNodes:        6,
+					MetachainConsensusGroupSize: 5,
+					Hysteresis:                  0.0,
+					Adaptivity:                  false,
+				},
+			},
+		},
 		MiniBlocksStorage: StorageConfig{
 			Cache: CacheConfig{
 				Capacity: uint32(txBlockBodyStorageSize),
@@ -103,6 +117,10 @@ func TestTomlParser(t *testing.T) {
 				WasmVMVersions:                      wasmVMVersions,
 				TimeOutForSCExecutionInMilliseconds: 10000,
 				WasmerSIGSEGVPassthrough:            true,
+				TransferAndExecuteByUserAddresses: []string{
+					"erd1qqqqqqqqqqqqqpgqr46jrxr6r2unaqh75ugd308dwx5vgnhwh47qtvepe0",
+					"erd1qqqqqqqqqqqqqpgqr46jrxr6r2unaqh75ugd308dwx5vgnhwh47qtvepe1",
+					"erd1qqqqqqqqqqqqqpgqr46jrxr6r2unaqh75ugd308dwx5vgnhwh47qtvepe2"},
 			},
 			Querying: QueryVirtualMachineConfig{
 				NumConcurrentVMs:     16,
@@ -146,6 +164,10 @@ func TestTomlParser(t *testing.T) {
 		},
 	}
 	testString := `
+[GeneralSettings]
+	ChainParametersByEpoch = [
+        { EnableEpoch = 0, RoundDuration = 4000, ShardConsensusGroupSize = 3, ShardMinNumNodes = 4, MetachainConsensusGroupSize = 5, MetachainMinNumNodes = 6, Hysteresis = 0.0, Adaptivity = false }
+    ]
 [MiniBlocksStorage]
     [MiniBlocksStorage.Cache]
         Capacity = ` + strconv.Itoa(txBlockBodyStorageSize) + `
@@ -200,6 +222,11 @@ func TestTomlParser(t *testing.T) {
             { StartEpoch = 12, Version = "v0.3" },
             { StartEpoch = 88, Version = "v1.2" },
         ]
+		TransferAndExecuteByUserAddresses = [
+			"erd1qqqqqqqqqqqqqpgqr46jrxr6r2unaqh75ugd308dwx5vgnhwh47qtvepe0", #shard 0
+			"erd1qqqqqqqqqqqqqpgqr46jrxr6r2unaqh75ugd308dwx5vgnhwh47qtvepe1", #shard 1
+			"erd1qqqqqqqqqqqqqpgqr46jrxr6r2unaqh75ugd308dwx5vgnhwh47qtvepe2", #shard 2
+		]
 
     [VirtualMachine.Querying]
         NumConcurrentVMs = 16
@@ -262,7 +289,9 @@ func TestTomlEconomicsParser(t *testing.T) {
 	minGasLimit := "18446744073709551615"
 	extraGasLimitGuardedTx := "50000"
 	maxGasPriceSetGuardian := "1234567"
+	maxGasHigherFactorAccepted := "10"
 	protocolSustainabilityAddress := "erd1932eft30w753xyvme8d49qejgkjc09n5e49w4mwdjtm0neld797su0dlxp"
+
 	denomination := 18
 
 	cfgEconomicsExpected := EconomicsConfig{
@@ -290,9 +319,10 @@ func TestTomlEconomicsParser(t *testing.T) {
 		FeeSettings: FeeSettings{
 			GasLimitSettings: []GasLimitSetting{
 				{
-					MaxGasLimitPerBlock:    maxGasLimitPerBlock,
-					MinGasLimit:            minGasLimit,
-					ExtraGasLimitGuardedTx: extraGasLimitGuardedTx,
+					MaxGasLimitPerBlock:        maxGasLimitPerBlock,
+					MinGasLimit:                minGasLimit,
+					ExtraGasLimitGuardedTx:     extraGasLimitGuardedTx,
+					MaxGasHigherFactorAccepted: maxGasHigherFactorAccepted,
 				},
 			},
 			MinGasPrice:            minGasPrice,
@@ -319,7 +349,7 @@ func TestTomlEconomicsParser(t *testing.T) {
     ProtocolSustainabilityAddress = "` + protocolSustainabilityAddress + `"
 
 [FeeSettings]
-    GasLimitSettings = [{EnableEpoch = 0, MaxGasLimitPerBlock = "` + maxGasLimitPerBlock + `", MaxGasLimitPerMiniBlock = "", MaxGasLimitPerMetaBlock = "", MaxGasLimitPerMetaMiniBlock = "", MaxGasLimitPerTx = "", MinGasLimit = "` + minGasLimit + `", ExtraGasLimitGuardedTx = "` + extraGasLimitGuardedTx + `"}] 
+    GasLimitSettings = [{EnableEpoch = 0, MaxGasLimitPerBlock = "` + maxGasLimitPerBlock + `", MaxGasLimitPerMiniBlock = "", MaxGasLimitPerMetaBlock = "", MaxGasLimitPerMetaMiniBlock = "", MaxGasLimitPerTx = "", MinGasLimit = "` + minGasLimit + `", ExtraGasLimitGuardedTx = "` + extraGasLimitGuardedTx + `", MaxGasHigherFactorAccepted = "` + maxGasHigherFactorAccepted + `"}] 
     MinGasPrice = "` + minGasPrice + `"
 	MaxGasPriceSetGuardian = "` + maxGasPriceSetGuardian + `"
 `
@@ -473,7 +503,8 @@ func TestAPIRoutesToml(t *testing.T) {
 
 func TestP2pConfig(t *testing.T) {
 	initialPeersList := "/ip4/127.0.0.1/tcp/9999/p2p/16Uiu2HAkw5SNNtSvH1zJiQ6Gc3WoGNSxiyNueRKe6fuAuh57G3Bk"
-	protocolID := "test protocol id"
+	protocolID1 := "test protocol id 1"
+	protocolID2 := "test protocol id 2"
 	shardingType := "ListSharder"
 	port := "37373-38383"
 
@@ -500,7 +531,13 @@ func TestP2pConfig(t *testing.T) {
     Enabled = false
     Type = ""
     RefreshIntervalInSec = 0
-    ProtocolID = "` + protocolID + `"
+
+    # ProtocolIDs represents the protocols that this node will advertise to other peers
+    # To connect to other nodes, those nodes should have at least one common protocol string
+    ProtocolIDs = [
+        "` + protocolID1 + `",
+        "` + protocolID2 + `",
+    ]
     InitialPeerList = ["` + initialPeersList + `"]
 
     #kademlia's routing table bucket size
@@ -538,7 +575,7 @@ func TestP2pConfig(t *testing.T) {
 			},
 		},
 		KadDhtPeerDiscovery: p2pConfig.KadDhtPeerDiscoveryConfig{
-			ProtocolID:      protocolID,
+			ProtocolIDs:     []string{protocolID1, protocolID2},
 			InitialPeerList: []string{initialPeersList},
 		},
 		Sharding: p2pConfig.ShardingConfig{
@@ -620,6 +657,12 @@ func TestEnableEpochConfig(t *testing.T) {
 
     # GovernanceEnableEpoch represents the epoch when governance is enabled
     GovernanceEnableEpoch = 21
+
+    # GovernanceDisableProposeEnableEpoch represents the epoch when governance disable proposal is enabled
+    GovernanceDisableProposeEnableEpoch = 22
+
+    # GovernanceFixesEnableEpoch represents the epoch when governance fixes are enabled
+    GovernanceFixesEnableEpoch = 23
 
     # DelegationManagerEnableEpoch represents the epoch when the delegation manager is enabled
     # epoch should not be 0
@@ -850,6 +893,57 @@ func TestEnableEpochConfig(t *testing.T) {
     # UseGasBoundedShouldFailExecutionEnableEpoch represents the epoch when use bounded gas function should fail execution in case of error
     UseGasBoundedShouldFailExecutionEnableEpoch = 96
 
+    # DynamicESDTEnableEpoch represents the epoch when dynamic NFT feature is enabled
+    DynamicESDTEnableEpoch = 97
+
+    # EGLDInMultiTransferEnableEpoch represents the epoch when EGLD in MultiTransfer is enabled
+    EGLDInMultiTransferEnableEpoch = 98
+
+    # CryptoOpcodesV2EnableEpoch represents the epoch when BLSMultiSig, Secp256r1 and other opcodes are enabled
+    CryptoOpcodesV2EnableEpoch = 99
+
+    # FixRelayedBaseCostEnableEpoch represents the epoch when the fix for relayed base cost will be enabled
+    FixRelayedBaseCostEnableEpoch = 100
+
+    # MultiESDTNFTTransferAndExecuteByUserEnableEpoch represents the epoch when enshrined sovereign cross chain opcodes are enabled
+    MultiESDTNFTTransferAndExecuteByUserEnableEpoch = 101
+
+	# FixRelayedMoveBalanceToNonPayableSCEnableEpoch represents the epoch when the fix for relayed move balance to non payable sc will be enabled
+    FixRelayedMoveBalanceToNonPayableSCEnableEpoch = 102
+
+	# RelayedTransactionsV3EnableEpoch represents the epoch when the relayed transactions v3 will be enabled
+    RelayedTransactionsV3EnableEpoch = 103
+
+	# RelayedTransactionsV3FixESDTTransferEnableEpoch represents the epoch when the fix for relayed transactions v3 with esdt transfer will be enabled
+    RelayedTransactionsV3FixESDTTransferEnableEpoch = 104
+
+	# AndromedaEnableEpoch represents the epoch when the equivalent messages are enabled
+	AndromedaEnableEpoch = 105
+
+    # CheckBuiltInCallOnTransferValueAndFailEnableRound represents the ROUND when the check on transfer value fix is activated
+    CheckBuiltInCallOnTransferValueAndFailEnableRound = 106
+
+	# MaskVMInternalDependenciesErrorsEnableEpoch represents the epoch when the additional internal erorr masking in vm is enabled
+	MaskVMInternalDependenciesErrorsEnableEpoch = 107
+
+	# FixBackTransferOPCODEEnableEpoch represents the epoch when the fix for back transfers opcode will be enabled
+	FixBackTransferOPCODEEnableEpoch = 108
+
+	# ValidationOnGobDecodeEnableEpoch represents the epoch when validation on GobDecode will be taken into account
+    ValidationOnGobDecodeEnableEpoch = 109
+
+	# BarnardOpcodesEnableEpoch represents the epoch when Barnard opcodes will be enabled
+	BarnardOpcodesEnableEpoch = 110
+
+    # AutomaticActivationOfNodesDisableEpoch represents the epoch when automatic activation of nodes for validators is disabled
+    AutomaticActivationOfNodesDisableEpoch = 111
+
+    # FixGetBalanceEnableEpoch represents the epoch when get balance opcode fix is enabled
+    FixGetBalanceEnableEpoch = 112
+
+    # RelayedTransactionsV1V2DisableEpoch represents the epoch when relayed transactions v1 and v2 are disabled
+    RelayedTransactionsV1V2DisableEpoch = 113
+
     # MaxNodesChangeEnableEpoch holds configuration for changing the maximum number of nodes and the enabling epoch
     MaxNodesChangeEnableEpoch = [
         { EpochEnable = 44, MaxNumNodes = 2169, NodesToShufflePerShard = 80 },
@@ -891,6 +985,8 @@ func TestEnableEpochConfig(t *testing.T) {
 			DoubleKeyProtectionEnableEpoch:                           19,
 			ESDTEnableEpoch:                                          20,
 			GovernanceEnableEpoch:                                    21,
+			GovernanceDisableProposeEnableEpoch:                      22,
+			GovernanceFixesEnableEpoch:                               23,
 			DelegationManagerEnableEpoch:                             22,
 			DelegationSmartContractEnableEpoch:                       23,
 			CorrectLastUnjailedEnableEpoch:                           24,
@@ -964,6 +1060,23 @@ func TestEnableEpochConfig(t *testing.T) {
 			AlwaysMergeContextsInEEIEnableEpoch:                      94,
 			CleanupAuctionOnLowWaitingListEnableEpoch:                95,
 			UseGasBoundedShouldFailExecutionEnableEpoch:              96,
+			DynamicESDTEnableEpoch:                                   97,
+			EGLDInMultiTransferEnableEpoch:                           98,
+			CryptoOpcodesV2EnableEpoch:                               99,
+			FixRelayedBaseCostEnableEpoch:                            100,
+			MultiESDTNFTTransferAndExecuteByUserEnableEpoch:          101,
+			FixRelayedMoveBalanceToNonPayableSCEnableEpoch:           102,
+			RelayedTransactionsV3EnableEpoch:                         103,
+			RelayedTransactionsV3FixESDTTransferEnableEpoch:          104,
+			AndromedaEnableEpoch:                                     105,
+			CheckBuiltInCallOnTransferValueAndFailEnableRound:        106,
+			MaskVMInternalDependenciesErrorsEnableEpoch:              107,
+			FixBackTransferOPCODEEnableEpoch:                         108,
+			ValidationOnGobDecodeEnableEpoch:                         109,
+			BarnardOpcodesEnableEpoch:                                110,
+			AutomaticActivationOfNodesDisableEpoch:                   111,
+			FixGetBalanceEnableEpoch:                                 112,
+			RelayedTransactionsV1V2DisableEpoch:                      113,
 			MaxNodesChangeEnableEpoch: []MaxNodesChangeConfig{
 				{
 					EpochEnable:            44,

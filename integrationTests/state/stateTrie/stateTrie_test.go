@@ -24,8 +24,13 @@ import (
 	dataTx "github.com/multiversx/mx-chain-core-go/data/transaction"
 	"github.com/multiversx/mx-chain-core-go/hashing/sha256"
 	crypto "github.com/multiversx/mx-chain-crypto-go"
+	vmcommon "github.com/multiversx/mx-chain-vm-common-go"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/multiversx/mx-chain-go/common"
 	"github.com/multiversx/mx-chain-go/common/errChan"
+	"github.com/multiversx/mx-chain-go/common/holders"
 	"github.com/multiversx/mx-chain-go/common/statistics"
 	"github.com/multiversx/mx-chain-go/config"
 	"github.com/multiversx/mx-chain-go/dataRetriever"
@@ -48,9 +53,6 @@ import (
 	stateMock "github.com/multiversx/mx-chain-go/testscommon/state"
 	testStorage "github.com/multiversx/mx-chain-go/testscommon/storage"
 	"github.com/multiversx/mx-chain-go/trie"
-	vmcommon "github.com/multiversx/mx-chain-vm-common-go"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 const denomination = "000000000000000000"
@@ -245,7 +247,7 @@ func TestAccountsDB_CommitTwoOkAccountsShouldWork(t *testing.T) {
 	// reloading a new trie to test if data is inside
 	rootHash, err = adb.RootHash()
 	require.Nil(t, err)
-	err = adb.RecreateTrie(rootHash)
+	err = adb.RecreateTrie(holders.NewDefaultRootHashesHolder(rootHash))
 	require.Nil(t, err)
 
 	// checking state1
@@ -282,7 +284,7 @@ func TestTrieDB_RecreateFromStorageShouldWork(t *testing.T) {
 	err := tr1.Commit()
 	require.Nil(t, err)
 
-	tr2, err := tr1.Recreate(h1)
+	tr2, err := tr1.Recreate(holders.NewDefaultRootHashesHolder(h1))
 	require.Nil(t, err)
 
 	valRecov, _, err := tr2.Get(key)
@@ -332,7 +334,7 @@ func TestAccountsDB_CommitTwoOkAccountsWithRecreationFromStorageShouldWork(t *te
 	fmt.Printf("data committed! Root: %v\n", base64.StdEncoding.EncodeToString(rootHash))
 
 	// reloading a new trie to test if data is inside
-	err = adb.RecreateTrie(h)
+	err = adb.RecreateTrie(holders.NewDefaultRootHashesHolder(h))
 	require.Nil(t, err)
 
 	// checking state1
@@ -1032,7 +1034,7 @@ func BenchmarkCreateOneMillionAccounts(b *testing.B) {
 	rootHash, err := adb.RootHash()
 	require.Nil(b, err)
 
-	_ = adb.RecreateTrie(rootHash)
+	_ = adb.RecreateTrie(holders.NewDefaultRootHashesHolder(rootHash))
 	fmt.Println("Completely collapsed trie")
 	createAndExecTxs(b, addr, nrTxs, nrOfAccounts, txVal, adb)
 }
@@ -1058,9 +1060,10 @@ func createAccounts(
 	tr, _ := trie.NewTrie(trieStorage, integrationTests.TestMarshalizer, integrationTests.TestHasher, &enableEpochsHandlerMock.EnableEpochsHandlerStub{}, maxTrieLevelInMemory)
 	spm, _ := storagePruningManager.NewStoragePruningManager(ewl, 10)
 	argsAccCreator := factory.ArgsAccountCreator{
-		Hasher:              integrationTests.TestHasher,
-		Marshaller:          integrationTests.TestMarshalizer,
-		EnableEpochsHandler: &enableEpochsHandlerMock.EnableEpochsHandlerStub{},
+		Hasher:                 integrationTests.TestHasher,
+		Marshaller:             integrationTests.TestMarshalizer,
+		EnableEpochsHandler:    &enableEpochsHandlerMock.EnableEpochsHandlerStub{},
+		StateAccessesCollector: &stateMock.StateAccessesCollectorStub{},
 	}
 	accCreator, _ := factory.NewAccountCreator(argsAccCreator)
 	snapshotsManager, _ := state.NewSnapshotsManager(state.ArgsNewSnapshotsManager{
@@ -1075,13 +1078,14 @@ func createAccounts(
 		StateStatsHandler:    statistics.NewStateStatistics(),
 	})
 	argsAccountsDB := state.ArgsAccountsDB{
-		Trie:                  tr,
-		Hasher:                integrationTests.TestHasher,
-		Marshaller:            integrationTests.TestMarshalizer,
-		AccountFactory:        accCreator,
-		StoragePruningManager: spm,
-		AddressConverter:      &testscommon.PubkeyConverterMock{},
-		SnapshotsManager:      snapshotsManager,
+		Trie:                   tr,
+		Hasher:                 integrationTests.TestHasher,
+		Marshaller:             integrationTests.TestMarshalizer,
+		AccountFactory:         accCreator,
+		StoragePruningManager:  spm,
+		AddressConverter:       &testscommon.PubkeyConverterMock{},
+		SnapshotsManager:       snapshotsManager,
+		StateAccessesCollector: &stateMock.StateAccessesCollectorStub{},
 	}
 	adb, _ := state.NewAccountsDB(argsAccountsDB)
 
@@ -1171,7 +1175,7 @@ func TestTrieDbPruning_GetAccountAfterPruning(t *testing.T) {
 	rootHash2, _ := adb.Commit()
 	adb.PruneTrie(rootHash1, state.OldRoot, state.NewPruningHandler(state.EnableDataRemoval))
 
-	err := adb.RecreateTrie(rootHash2)
+	err := adb.RecreateTrie(holders.NewDefaultRootHashesHolder(rootHash2))
 	require.Nil(t, err)
 	acc, err := adb.GetExistingAccount(address1)
 	require.NotNil(t, acc)
@@ -1218,7 +1222,7 @@ func TestAccountsDB_RecreateTrieInvalidatesDataTriesCache(t *testing.T) {
 	err = adb.RevertToSnapshot(0)
 	require.Nil(t, err)
 
-	err = adb.RecreateTrie(rootHash)
+	err = adb.RecreateTrie(holders.NewDefaultRootHashesHolder(rootHash))
 	require.Nil(t, err)
 	acc1, _ = adb.LoadAccount(address1)
 	state1 = acc1.(state.UserAccountHandler)
@@ -1263,7 +1267,7 @@ func TestTrieDbPruning_GetDataTrieTrackerAfterPruning(t *testing.T) {
 	newRootHash, _ := adb.Commit()
 	adb.PruneTrie(oldRootHash, state.OldRoot, state.NewPruningHandler(state.EnableDataRemoval))
 
-	err := adb.RecreateTrie(newRootHash)
+	err := adb.RecreateTrie(holders.NewDefaultRootHashesHolder(newRootHash))
 	require.Nil(t, err)
 	acc, err := adb.GetExistingAccount(address1)
 	require.NotNil(t, acc)
@@ -1284,7 +1288,7 @@ func TestTrieDbPruning_GetDataTrieTrackerAfterPruning(t *testing.T) {
 func collapseTrie(state state.UserAccountHandler, t *testing.T) {
 	stateRootHash := state.GetRootHash()
 	stateTrie := state.DataTrie().(common.Trie)
-	stateNewTrie, _ := stateTrie.Recreate(stateRootHash)
+	stateNewTrie, _ := stateTrie.Recreate(holders.NewDefaultRootHashesHolder(stateRootHash))
 	require.NotNil(t, stateNewTrie)
 
 	state.SetDataTrie(stateNewTrie)
@@ -1298,7 +1302,7 @@ func TestRollbackBlockAndCheckThatPruningIsCancelledOnAccountsTrie(t *testing.T)
 	numNodesPerShard := 1
 	numNodesMeta := 1
 
-	nodes, idxProposers := integrationTests.SetupSyncNodesOneShardAndMeta(numNodesPerShard, numNodesMeta)
+	nodes, leaders := integrationTests.SetupSyncNodesOneShardAndMeta(numNodesPerShard, numNodesMeta)
 	defer integrationTests.CloseProcessorNodes(nodes)
 
 	integrationTests.BootstrapDelay()
@@ -1330,7 +1334,7 @@ func TestRollbackBlockAndCheckThatPruningIsCancelledOnAccountsTrie(t *testing.T)
 
 	round = integrationTests.IncrementAndPrintRound(round)
 	nonce++
-	round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, idxProposers, round, nonce)
+	round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, leaders, round, nonce)
 
 	rootHashOfFirstBlock, _ := shardNode.AccntState.RootHash()
 
@@ -1339,7 +1343,7 @@ func TestRollbackBlockAndCheckThatPruningIsCancelledOnAccountsTrie(t *testing.T)
 
 	delayRounds := 10
 	for i := 0; i < delayRounds; i++ {
-		round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, idxProposers, round, nonce)
+		round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, leaders, round, nonce)
 	}
 
 	fmt.Println("Generating transactions...")
@@ -1356,7 +1360,7 @@ func TestRollbackBlockAndCheckThatPruningIsCancelledOnAccountsTrie(t *testing.T)
 	fmt.Println("Delaying for disseminating transactions...")
 	time.Sleep(time.Second * 5)
 
-	round, _ = integrationTests.ProposeAndSyncOneBlock(t, nodes, idxProposers, round, nonce)
+	round, _ = integrationTests.ProposeAndSyncOneBlock(t, nodes, leaders, round, nonce)
 	time.Sleep(time.Second * 5)
 
 	rootHashOfRollbackedBlock, _ := shardNode.AccntState.RootHash()
@@ -1377,7 +1381,7 @@ func TestRollbackBlockAndCheckThatPruningIsCancelledOnAccountsTrie(t *testing.T)
 
 	if !bytes.Equal(rootHash, rootHashOfRollbackedBlock) {
 		time.Sleep(time.Second * 6)
-		err = shardNode.AccntState.RecreateTrie(rootHashOfRollbackedBlock)
+		err = shardNode.AccntState.RecreateTrie(holders.NewDefaultRootHashesHolder(rootHashOfRollbackedBlock))
 		require.True(t, strings.Contains(err.Error(), trie.ErrKeyNotFound.Error()))
 	}
 
@@ -1389,13 +1393,13 @@ func TestRollbackBlockAndCheckThatPruningIsCancelledOnAccountsTrie(t *testing.T)
 	integrationTests.ProposeBlocks(
 		nodes,
 		&round,
-		idxProposers,
+		leaders,
 		nonces,
 		numOfRounds,
 	)
 	time.Sleep(time.Second * 5)
 
-	err = shardNode.AccntState.RecreateTrie(rootHashOfFirstBlock)
+	err = shardNode.AccntState.RecreateTrie(holders.NewDefaultRootHashesHolder(rootHashOfFirstBlock))
 	require.Nil(t, err)
 	require.Equal(t, uint64(11), nodes[0].BlockChain.GetCurrentBlockHeader().GetNonce())
 	require.Equal(t, uint64(12), nodes[1].BlockChain.GetCurrentBlockHeader().GetNonce())
@@ -1458,7 +1462,7 @@ func TestRollbackBlockWithSameRootHashAsPreviousAndCheckThatPruningIsNotDone(t *
 	require.Equal(t, uint64(1), nodes[0].BlockChain.GetCurrentBlockHeader().GetNonce())
 	require.Equal(t, uint64(2), nodes[1].BlockChain.GetCurrentBlockHeader().GetNonce())
 
-	err := shardNode.AccntState.RecreateTrie(rootHashOfFirstBlock)
+	err := shardNode.AccntState.RecreateTrie(holders.NewDefaultRootHashesHolder(rootHashOfFirstBlock))
 	require.Nil(t, err)
 }
 
@@ -1538,7 +1542,7 @@ func TestTriePruningWhenBlockIsFinal(t *testing.T) {
 	require.Equal(t, uint64(17), nodes[0].BlockChain.GetCurrentBlockHeader().GetNonce())
 	require.Equal(t, uint64(17), nodes[1].BlockChain.GetCurrentBlockHeader().GetNonce())
 
-	err := shardNode.AccntState.RecreateTrie(rootHashOfFirstBlock)
+	err := shardNode.AccntState.RecreateTrie(holders.NewDefaultRootHashesHolder(rootHashOfFirstBlock))
 	require.True(t, strings.Contains(err.Error(), trie.ErrKeyNotFound.Error()))
 }
 
@@ -1558,11 +1562,11 @@ func TestStatePruningIsNotBuffered(t *testing.T) {
 	)
 
 	shardNode := nodes[0]
-	idxProposers := make([]int, numOfShards+1)
+	leaders := make([]*integrationTests.TestProcessorNode, numOfShards+1)
 	for i := 0; i < numOfShards; i++ {
-		idxProposers[i] = i * nodesPerShard
+		leaders[i] = nodes[i*nodesPerShard]
 	}
-	idxProposers[numOfShards] = numOfShards * nodesPerShard
+	leaders[numOfShards] = nodes[numOfShards*nodesPerShard]
 
 	integrationTests.DisplayAndStartNodes(nodes)
 
@@ -1582,21 +1586,21 @@ func TestStatePruningIsNotBuffered(t *testing.T) {
 
 	time.Sleep(integrationTests.StepDelay)
 
-	round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, idxProposers, round, nonce)
+	round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, leaders, round, nonce)
 
 	delayRounds := 5
 	for j := 0; j < 8; j++ {
 		// alter the shardNode's state by placing the value0 variable inside it's data trie
 		alterState(t, shardNode, nodes, []byte("key"), []byte("value0"))
 		for i := 0; i < delayRounds; i++ {
-			round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, idxProposers, round, nonce)
+			round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, leaders, round, nonce)
 		}
 		checkTrieCanBeRecreated(t, shardNode)
 
 		// alter the shardNode's state by placing the value1 variable inside it's data trie
 		alterState(t, shardNode, nodes, []byte("key"), []byte("value1"))
 		for i := 0; i < delayRounds; i++ {
-			round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, idxProposers, round, nonce)
+			round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, leaders, round, nonce)
 		}
 		checkTrieCanBeRecreated(t, shardNode)
 	}
@@ -1618,11 +1622,11 @@ func TestStatePruningIsNotBufferedOnConsecutiveBlocks(t *testing.T) {
 	)
 
 	shardNode := nodes[0]
-	idxProposers := make([]int, numOfShards+1)
+	leaders := make([]*integrationTests.TestProcessorNode, numOfShards+1)
 	for i := 0; i < numOfShards; i++ {
-		idxProposers[i] = i * nodesPerShard
+		leaders[i] = nodes[i*nodesPerShard]
 	}
-	idxProposers[numOfShards] = numOfShards * nodesPerShard
+	leaders[numOfShards] = nodes[numOfShards*nodesPerShard]
 
 	integrationTests.DisplayAndStartNodes(nodes)
 
@@ -1642,17 +1646,17 @@ func TestStatePruningIsNotBufferedOnConsecutiveBlocks(t *testing.T) {
 
 	time.Sleep(integrationTests.StepDelay)
 
-	round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, idxProposers, round, nonce)
+	round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, leaders, round, nonce)
 
 	for j := 0; j < 30; j++ {
 		// alter the shardNode's state by placing the value0 variable inside it's data trie
 		alterState(t, shardNode, nodes, []byte("key"), []byte("value0"))
-		round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, idxProposers, round, nonce)
+		round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, leaders, round, nonce)
 		checkTrieCanBeRecreated(t, shardNode)
 
 		// alter the shardNode's state by placing the value1 variable inside it's data trie
 		alterState(t, shardNode, nodes, []byte("key"), []byte("value1"))
-		round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, idxProposers, round, nonce)
+		round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, leaders, round, nonce)
 		checkTrieCanBeRecreated(t, shardNode)
 	}
 }
@@ -1686,12 +1690,12 @@ func checkTrieCanBeRecreated(tb testing.TB, node *integrationTests.TestProcessor
 
 	stateTrie := node.TrieContainer.Get([]byte(dataRetriever.UserAccountsUnit.String()))
 	roothash := node.BlockChain.GetCurrentBlockRootHash()
-	tr, err := stateTrie.Recreate(roothash)
+	tr, err := stateTrie.Recreate(holders.NewDefaultRootHashesHolder(roothash))
 	require.Nil(tb, err)
 	require.NotNil(tb, tr)
 
 	_, _, finalRoothash := node.BlockChain.GetFinalBlockInfo()
-	tr, err = stateTrie.Recreate(finalRoothash)
+	tr, err = stateTrie.Recreate(holders.NewDefaultRootHashesHolder(finalRoothash))
 	require.Nil(tb, err)
 	require.NotNil(tb, tr)
 
@@ -1703,7 +1707,7 @@ func checkTrieCanBeRecreated(tb testing.TB, node *integrationTests.TestProcessor
 	err = integrationTests.TestMarshalizer.Unmarshal(hdr, hdrBytes)
 	require.Nil(tb, err)
 
-	tr, err = stateTrie.Recreate(hdr.GetRootHash())
+	tr, err = stateTrie.Recreate(holders.NewDefaultRootHashesHolder(hdr.GetRootHash()))
 	require.Nil(tb, err)
 	require.NotNil(tb, tr)
 }
@@ -1732,11 +1736,11 @@ func TestSnapshotOnEpochChange(t *testing.T) {
 		node.EpochStartTrigger.SetRoundsPerEpoch(roundsPerEpoch)
 	}
 
-	idxProposers := make([]int, numOfShards+1)
+	leaders := make([]*integrationTests.TestProcessorNode, numOfShards+1)
 	for i := 0; i < numOfShards; i++ {
-		idxProposers[i] = i * nodesPerShard
+		leaders[i] = nodes[i*nodesPerShard]
 	}
-	idxProposers[numOfShards] = numOfShards * nodesPerShard
+	leaders[numOfShards] = nodes[numOfShards*nodesPerShard]
 
 	integrationTests.DisplayAndStartNodes(nodes)
 
@@ -1766,7 +1770,7 @@ func TestSnapshotOnEpochChange(t *testing.T) {
 	numRounds := uint32(20)
 	for i := uint64(0); i < uint64(numRounds); i++ {
 
-		round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, idxProposers, round, nonce)
+		round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, leaders, round, nonce)
 
 		for _, node := range nodes {
 			integrationTests.CreateAndSendTransaction(node, nodes, sendValue, receiverAddress, "", integrationTests.AdditionalGasLimit)
@@ -1785,7 +1789,7 @@ func TestSnapshotOnEpochChange(t *testing.T) {
 
 	numDelayRounds := uint32(15)
 	for i := uint64(0); i < uint64(numDelayRounds); i++ {
-		round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, idxProposers, round, nonce)
+		round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, leaders, round, nonce)
 
 		for _, node := range nodes {
 			integrationTests.CreateAndSendTransaction(node, nodes, sendValue, receiverAddress, "", integrationTests.AdditionalGasLimit)
@@ -1854,7 +1858,7 @@ func testNodeStateSnapshotAndPruning(
 	stateTrie := node.TrieContainer.Get([]byte(dataRetriever.UserAccountsUnit.String()))
 	assert.Equal(t, 1, len(snapshotsRootHashes))
 	for i := range snapshotsRootHashes {
-		tr, err := stateTrie.Recreate(snapshotsRootHashes[i])
+		tr, err := stateTrie.Recreate(holders.NewDefaultRootHashesHolder(snapshotsRootHashes[i]))
 		require.Nil(t, err)
 		require.NotNil(t, tr)
 	}
@@ -1862,7 +1866,7 @@ func testNodeStateSnapshotAndPruning(
 	assert.Equal(t, 1, len(prunedRootHashes))
 	// if pruning is called for a root hash in a different epoch than the commit, then recreate trie should work
 	for i := 0; i < len(prunedRootHashes)-1; i++ {
-		tr, err := stateTrie.Recreate(prunedRootHashes[i])
+		tr, err := stateTrie.Recreate(holders.NewDefaultRootHashesHolder(prunedRootHashes[i]))
 		require.Nil(t, tr)
 		require.NotNil(t, err)
 	}
@@ -2174,10 +2178,10 @@ func checkDataTrieConsistency(
 	for i, rootHash := range dataTriesRootHashes {
 		_, ok := removedAccounts[i]
 		if ok {
-			err := adb.RecreateTrie(rootHash)
+			err := adb.RecreateTrie(holders.NewDefaultRootHashesHolder(rootHash))
 			assert.NotNil(t, err)
 		} else {
-			err := adb.RecreateTrie(rootHash)
+			err := adb.RecreateTrie(holders.NewDefaultRootHashesHolder(rootHash))
 			require.Nil(t, err)
 		}
 	}
@@ -2454,7 +2458,7 @@ func migrateDataTrieBuiltInFunc(
 	migrationAddress []byte,
 	nonce uint64,
 	round uint64,
-	idxProposers []int,
+	leaders []*integrationTests.TestProcessorNode,
 ) {
 	require.True(t, nodes[shardId].EnableEpochsHandler.IsFlagEnabled(common.AutoBalanceDataTriesFlag))
 	isMigrated := getAddressMigrationStatus(t, nodes[shardId].AccntState, migrationAddress)
@@ -2464,7 +2468,7 @@ func migrateDataTrieBuiltInFunc(
 
 	time.Sleep(time.Second)
 	nrRoundsToPropagate := 5
-	_, _ = integrationTests.WaitOperationToBeDone(t, nodes, nrRoundsToPropagate, nonce, round, idxProposers)
+	_, _ = integrationTests.WaitOperationToBeDone(t, leaders, nodes, nrRoundsToPropagate, nonce, round)
 
 	isMigrated = getAddressMigrationStatus(t, nodes[shardId].AccntState, migrationAddress)
 	require.True(t, isMigrated)
@@ -2474,7 +2478,7 @@ func startNodesAndIssueToken(
 	t *testing.T,
 	numOfShards int,
 	issuerShardId byte,
-) ([]*integrationTests.TestProcessorNode, []int, uint64, uint64) {
+) (leaders []*integrationTests.TestProcessorNode, nodes []*integrationTests.TestProcessorNode, nonce uint64, round uint64) {
 	nodesPerShard := 1
 	numMetachainNodes := 1
 
@@ -2488,9 +2492,10 @@ func startNodesAndIssueToken(
 		StakingV4Step1EnableEpoch:                   integrationTests.UnreachableEpoch,
 		StakingV4Step2EnableEpoch:                   integrationTests.UnreachableEpoch,
 		StakingV4Step3EnableEpoch:                   integrationTests.UnreachableEpoch,
+		AndromedaEnableEpoch:                        integrationTests.UnreachableEpoch,
 		AutoBalanceDataTriesEnableEpoch:             1,
 	}
-	nodes := integrationTests.CreateNodesWithEnableEpochs(
+	nodes = integrationTests.CreateNodesWithEnableEpochs(
 		numOfShards,
 		nodesPerShard,
 		numMetachainNodes,
@@ -2502,19 +2507,19 @@ func startNodesAndIssueToken(
 		node.EpochStartTrigger.SetRoundsPerEpoch(roundsPerEpoch)
 	}
 
-	idxProposers := make([]int, numOfShards+1)
+	leaders = make([]*integrationTests.TestProcessorNode, numOfShards+1)
 	for i := 0; i < numOfShards; i++ {
-		idxProposers[i] = i * nodesPerShard
+		leaders[i] = nodes[i*nodesPerShard]
 	}
-	idxProposers[numOfShards] = numOfShards * nodesPerShard
+	leaders[numOfShards] = nodes[numOfShards*nodesPerShard]
 
 	integrationTests.DisplayAndStartNodes(nodes)
 
 	initialVal := int64(10000000000)
 	integrationTests.MintAllNodes(nodes, big.NewInt(initialVal))
 
-	round := uint64(0)
-	nonce := uint64(0)
+	round = uint64(0)
+	nonce = uint64(0)
 	round = integrationTests.IncrementAndPrintRound(round)
 	nonce++
 
@@ -2525,14 +2530,14 @@ func startNodesAndIssueToken(
 
 	time.Sleep(time.Second)
 	nrRoundsToPropagate := 8
-	nonce, round = integrationTests.WaitOperationToBeDone(t, nodes, nrRoundsToPropagate, nonce, round, idxProposers)
+	nonce, round = integrationTests.WaitOperationToBeDone(t, leaders, nodes, nrRoundsToPropagate, nonce, round)
 	time.Sleep(time.Second)
 
 	tokenIdentifier := string(integrationTests.GetTokenIdentifier(nodes, []byte(ticker)))
 
 	esdtCommon.CheckAddressHasTokens(t, nodes[issuerShardId].OwnAccount.Address, nodes, []byte(tokenIdentifier), 0, initialSupply)
 
-	return nodes, idxProposers, nonce, round
+	return nodes, leaders, nonce, round
 }
 
 func getDestAccountAddress(migrationAddress []byte, shardId byte) []byte {
@@ -2730,9 +2735,10 @@ func createAccountsDBTestSetup() *state.AccountsDB {
 	tr, _ := trie.NewTrie(trieStorage, integrationTests.TestMarshalizer, integrationTests.TestHasher, &enableEpochsHandlerMock.EnableEpochsHandlerStub{}, maxTrieLevelInMemory)
 	spm, _ := storagePruningManager.NewStoragePruningManager(ewl, 10)
 	argsAccCreator := factory.ArgsAccountCreator{
-		Hasher:              integrationTests.TestHasher,
-		Marshaller:          integrationTests.TestMarshalizer,
-		EnableEpochsHandler: &enableEpochsHandlerMock.EnableEpochsHandlerStub{},
+		Hasher:                 integrationTests.TestHasher,
+		Marshaller:             integrationTests.TestMarshalizer,
+		EnableEpochsHandler:    &enableEpochsHandlerMock.EnableEpochsHandlerStub{},
+		StateAccessesCollector: &stateMock.StateAccessesCollectorStub{},
 	}
 	accCreator, _ := factory.NewAccountCreator(argsAccCreator)
 
@@ -2749,13 +2755,14 @@ func createAccountsDBTestSetup() *state.AccountsDB {
 	})
 
 	argsAccountsDB := state.ArgsAccountsDB{
-		Trie:                  tr,
-		Hasher:                integrationTests.TestHasher,
-		Marshaller:            integrationTests.TestMarshalizer,
-		AccountFactory:        accCreator,
-		StoragePruningManager: spm,
-		AddressConverter:      &testscommon.PubkeyConverterMock{},
-		SnapshotsManager:      snapshotsManager,
+		Trie:                   tr,
+		Hasher:                 integrationTests.TestHasher,
+		Marshaller:             integrationTests.TestMarshalizer,
+		AccountFactory:         accCreator,
+		StoragePruningManager:  spm,
+		AddressConverter:       &testscommon.PubkeyConverterMock{},
+		SnapshotsManager:       snapshotsManager,
+		StateAccessesCollector: &stateMock.StateAccessesCollectorStub{},
 	}
 	adb, _ := state.NewAccountsDB(argsAccountsDB)
 

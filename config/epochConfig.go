@@ -32,6 +32,8 @@ type EnableEpochs struct {
 	DoubleKeyProtectionEnableEpoch                           uint32
 	ESDTEnableEpoch                                          uint32
 	GovernanceEnableEpoch                                    uint32
+	GovernanceDisableProposeEnableEpoch                      uint32
+	GovernanceFixesEnableEpoch                               uint32
 	DelegationManagerEnableEpoch                             uint32
 	DelegationSmartContractEnableEpoch                       uint32
 	CorrectLastUnjailedEnableEpoch                           uint32
@@ -115,6 +117,24 @@ type EnableEpochs struct {
 	CleanupAuctionOnLowWaitingListEnableEpoch                uint32
 	AlwaysMergeContextsInEEIEnableEpoch                      uint32
 	UseGasBoundedShouldFailExecutionEnableEpoch              uint32
+	DynamicESDTEnableEpoch                                   uint32
+	EGLDInMultiTransferEnableEpoch                           uint32
+	CryptoOpcodesV2EnableEpoch                               uint32
+	UnJailCleanupEnableEpoch                                 uint32
+	FixRelayedBaseCostEnableEpoch                            uint32
+	MultiESDTNFTTransferAndExecuteByUserEnableEpoch          uint32
+	FixRelayedMoveBalanceToNonPayableSCEnableEpoch           uint32
+	RelayedTransactionsV3EnableEpoch                         uint32
+	RelayedTransactionsV3FixESDTTransferEnableEpoch          uint32
+	AndromedaEnableEpoch                                     uint32
+	CheckBuiltInCallOnTransferValueAndFailEnableRound        uint32
+	MaskVMInternalDependenciesErrorsEnableEpoch              uint32
+	FixBackTransferOPCODEEnableEpoch                         uint32
+	ValidationOnGobDecodeEnableEpoch                         uint32
+	BarnardOpcodesEnableEpoch                                uint32
+	FixGetBalanceEnableEpoch                                 uint32
+	AutomaticActivationOfNodesDisableEpoch                   uint32
+	RelayedTransactionsV1V2DisableEpoch                      uint32
 	BLSMultiSignerEnableEpoch                                []MultiSignerConfig
 }
 

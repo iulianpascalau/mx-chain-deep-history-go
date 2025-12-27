@@ -9,6 +9,7 @@ import (
 	"github.com/multiversx/mx-chain-core-go/core/check"
 	"github.com/multiversx/mx-chain-core-go/data/alteredAccount"
 	"github.com/multiversx/mx-chain-core-go/data/api"
+	"github.com/multiversx/mx-chain-core-go/data/smartContractResult"
 	"github.com/multiversx/mx-chain-core-go/data/transaction"
 	"github.com/multiversx/mx-chain-go/common"
 	"github.com/multiversx/mx-chain-go/genesis"
@@ -155,6 +156,11 @@ func (nar *nodeApiResolver) SimulateTransactionExecution(tx *transaction.Transac
 	return nar.apiTransactionEvaluator.SimulateTransactionExecution(tx)
 }
 
+// SimulateSCRExecutionCost will simulate the provided smart contract results and return the simulation results
+func (nar *nodeApiResolver) SimulateSCRExecutionCost(scr *smartContractResult.SmartContractResult) (*transaction.CostResponse, error) {
+	return nar.apiTransactionEvaluator.SimulateSCRExecutionCost(scr)
+}
+
 // Close closes all underlying components
 func (nar *nodeApiResolver) Close() error {
 	for _, sm := range nar.storageManagers {
@@ -187,6 +193,11 @@ func (nar *nodeApiResolver) GetDelegatorsList(ctx context.Context) ([]*api.Deleg
 // GetTransaction will return the transaction with the given hash and optionally with results
 func (nar *nodeApiResolver) GetTransaction(hash string, withResults bool) (*transaction.ApiTransactionResult, error) {
 	return nar.apiTransactionHandler.GetTransaction(hash, withResults)
+}
+
+// GetSCRsByTxHash will return a list of smart contract results based on a provided tx hash and smart contract result hash
+func (nar *nodeApiResolver) GetSCRsByTxHash(txHash string, scrHash string) ([]*transaction.ApiSmartContractResult, error) {
+	return nar.apiTransactionHandler.GetSCRsByTxHash(txHash, scrHash)
 }
 
 // GetTransactionsPool will return a structure containing the transactions pool that is to be returned on API calls

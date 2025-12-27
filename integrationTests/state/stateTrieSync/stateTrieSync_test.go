@@ -10,8 +10,14 @@ import (
 
 	"github.com/multiversx/mx-chain-core-go/core"
 	"github.com/multiversx/mx-chain-core-go/core/throttler"
+	logger "github.com/multiversx/mx-chain-logger-go"
+	wasmConfig "github.com/multiversx/mx-chain-vm-go/config"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/multiversx/mx-chain-go/common"
 	"github.com/multiversx/mx-chain-go/common/errChan"
+	"github.com/multiversx/mx-chain-go/common/holders"
 	"github.com/multiversx/mx-chain-go/dataRetriever"
 	"github.com/multiversx/mx-chain-go/epochStart/notifier"
 	"github.com/multiversx/mx-chain-go/integrationTests"
@@ -27,10 +33,6 @@ import (
 	"github.com/multiversx/mx-chain-go/trie/statistics"
 	"github.com/multiversx/mx-chain-go/trie/storageMarker"
 	"github.com/multiversx/mx-chain-go/vm/systemSmartContracts/defaults"
-	logger "github.com/multiversx/mx-chain-logger-go"
-	wasmConfig "github.com/multiversx/mx-chain-vm-go/config"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 var log = logger.GetOrCreate("integrationtests/state/statetriesync")
@@ -139,7 +141,7 @@ func testNodeRequestInterceptTrieNodesWithMessenger(t *testing.T, version int) {
 	assert.Nil(t, err)
 	cancel()
 
-	requesterTrie, err = requesterTrie.Recreate(rootHash)
+	requesterTrie, err = requesterTrie.Recreate(holders.NewDefaultRootHashesHolder(rootHash))
 	require.Nil(t, err)
 
 	newRootHash, _ := requesterTrie.RootHash()
@@ -359,7 +361,7 @@ func testMultipleDataTriesSync(t *testing.T, numAccounts int, numDataTrieLeaves 
 	err = userAccSyncer.SyncAccounts(rootHash, storageMarker.NewDisabledStorageMarker())
 	assert.Nil(t, err)
 
-	_ = nRequester.AccntState.RecreateTrie(rootHash)
+	_ = nRequester.AccntState.RecreateTrie(holders.NewDefaultRootHashesHolder(rootHash))
 
 	newRootHash, _ := nRequester.AccntState.RootHash()
 	assert.NotEqual(t, nilRootHash, newRootHash)
@@ -426,7 +428,6 @@ func testSyncMissingSnapshotNodes(t *testing.T, version int) {
 		t.Skip("this is not a short test")
 	}
 
-	numSystemAccounts := 1
 	numAccounts := 1000
 	numDataTrieLeaves := 50
 	valSize := 32
@@ -448,11 +449,11 @@ func testSyncMissingSnapshotNodes(t *testing.T, version int) {
 		node.EpochStartTrigger.SetRoundsPerEpoch(roundsPerEpoch)
 	}
 
-	idxProposers := make([]int, numOfShards+1)
+	leaders := make([]*integrationTests.TestProcessorNode, numOfShards+1)
 	for i := 0; i < numOfShards; i++ {
-		idxProposers[i] = i * nodesPerShard
+		leaders[i] = nodes[i*nodesPerShard]
 	}
-	idxProposers[numOfShards] = numOfShards * nodesPerShard
+	leaders[numOfShards] = nodes[numOfShards*nodesPerShard]
 
 	integrationTests.DisplayAndStartNodes(nodes)
 
@@ -475,7 +476,7 @@ func testSyncMissingSnapshotNodes(t *testing.T, version int) {
 	nonce++
 	numDelayRounds := uint32(10)
 	for i := uint64(0); i < uint64(numDelayRounds); i++ {
-		round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, idxProposers, round, nonce)
+		round, nonce = integrationTests.ProposeAndSyncOneBlock(t, nodes, leaders, round, nonce)
 		time.Sleep(integrationTests.StepDelay)
 	}
 
@@ -484,7 +485,7 @@ func testSyncMissingSnapshotNodes(t *testing.T, version int) {
 	dataTrieRootHashes := addAccountsToState(t, numAccounts, numDataTrieLeaves, accState, valSize)
 	rootHash, _ := accState.RootHash()
 	numLeaves := getNumLeaves(t, resolverTrie, rootHash)
-	require.Equal(t, numAccounts+numSystemAccounts, numLeaves)
+	require.Equal(t, numAccounts, numLeaves)
 
 	requesterTrie := nRequester.TrieContainer.Get([]byte(dataRetriever.UserAccountsUnit.String()))
 	nilRootHash, _ := requesterTrie.RootHash()
@@ -509,14 +510,14 @@ func testSyncMissingSnapshotNodes(t *testing.T, version int) {
 	for sw.IsSnapshotInProgress() {
 		time.Sleep(time.Millisecond * 100)
 	}
-	_ = nRequester.AccntState.RecreateTrie(rootHash)
+	_ = nRequester.AccntState.RecreateTrie(holders.NewDefaultRootHashesHolder(rootHash))
 
 	newRootHash, _ := nRequester.AccntState.RootHash()
 	assert.NotEqual(t, nilRootHash, newRootHash)
 	assert.Equal(t, rootHash, newRootHash)
 
 	numLeaves = getNumLeaves(t, requesterTrie, rootHash)
-	assert.Equal(t, numAccounts+numSystemAccounts, numLeaves)
+	assert.Equal(t, numAccounts, numLeaves)
 	checkAllDataTriesAreSynced(t, numDataTrieLeaves, requesterTrie, dataTrieRootHashes)
 }
 
@@ -545,7 +546,7 @@ func copyPartialState(t *testing.T, sourceNode, destinationNode *integrationTest
 func getDataTriesHashes(t *testing.T, tr common.Trie, dataTriesRootHashes [][]byte) [][]byte {
 	hashes := make([][]byte, 0)
 	for _, rh := range dataTriesRootHashes {
-		dt, err := tr.Recreate(rh)
+		dt, err := tr.Recreate(holders.NewDefaultRootHashesHolder(rh))
 		assert.Nil(t, err)
 
 		dtHashes, err := dt.GetAllHashes()

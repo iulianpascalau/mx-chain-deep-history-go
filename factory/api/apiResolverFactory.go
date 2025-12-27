@@ -244,6 +244,8 @@ func CreateApiResolver(args *ApiResolverArgs) (facade.ApiResolver, error) {
 		TxTypeHandler:            txTypeHandler,
 		LogsFacade:               logsFacade,
 		DataFieldParser:          dataFieldParser,
+		TxMarshaller:             args.CoreComponents.TxMarshalizer(),
+		EnableEpochsHandler:      args.CoreComponents.EnableEpochsHandler(),
 	}
 	apiTransactionProcessor, err := transactionAPI.NewAPITransactionProcessor(argsAPITransactionProc)
 	if err != nil {
@@ -411,6 +413,8 @@ func createScQueryElement(
 		MissingTrieNodesNotifier: syncer.NewMissingTrieNodesNotifier(),
 		Accounts:                 accountsAdapterApi,
 		BlockChain:               apiBlockchain,
+		EpochStartTrigger:        args.processComponents.EpochStartTrigger(),
+		RoundHandler:             args.processComponents.RoundHandler(),
 	}
 
 	var vmFactory process.VirtualMachinesContainerFactory
@@ -529,6 +533,7 @@ func createShardVmContainerFactory(args scQueryElementArgs, argsHook hooks.ArgBl
 		WasmVMChangeLocker:  args.coreComponents.WasmVMChangeLocker(),
 		ESDTTransferParser:  esdtTransferParser,
 		Hasher:              args.coreComponents.Hasher(),
+		PubKeyConverter:     args.coreComponents.AddressPubKeyConverter(),
 	}
 
 	log.Debug("apiResolver: enable epoch for sc deploy", "epoch", args.epochConfig.EnableEpochs.SCDeployEnableEpoch)
@@ -545,9 +550,10 @@ func createShardVmContainerFactory(args scQueryElementArgs, argsHook hooks.ArgBl
 
 func createNewAccountsAdapterApi(args scQueryElementArgs, chainHandler data.ChainHandler) (state.AccountsAdapterAPI, common.StorageManager, error) {
 	argsAccCreator := factoryState.ArgsAccountCreator{
-		Hasher:              args.coreComponents.Hasher(),
-		Marshaller:          args.coreComponents.InternalMarshalizer(),
-		EnableEpochsHandler: args.coreComponents.EnableEpochsHandler(),
+		Hasher:                 args.coreComponents.Hasher(),
+		Marshaller:             args.coreComponents.InternalMarshalizer(),
+		EnableEpochsHandler:    args.coreComponents.EnableEpochsHandler(),
+		StateAccessesCollector: args.stateComponents.StateAccessesCollector(),
 	}
 	accountFactory, err := factoryState.NewAccountCreator(argsAccCreator)
 	if err != nil {
@@ -591,13 +597,14 @@ func createNewAccountsAdapterApi(args scQueryElementArgs, chainHandler data.Chai
 	}
 
 	argsAPIAccountsDB := state.ArgsAccountsDB{
-		Trie:                  merkleTrie,
-		Hasher:                args.coreComponents.Hasher(),
-		Marshaller:            args.coreComponents.InternalMarshalizer(),
-		AccountFactory:        accountFactory,
-		StoragePruningManager: storagePruning,
-		AddressConverter:      args.coreComponents.AddressPubKeyConverter(),
-		SnapshotsManager:      disabledState.NewDisabledSnapshotsManager(),
+		Trie:                   merkleTrie,
+		Hasher:                 args.coreComponents.Hasher(),
+		Marshaller:             args.coreComponents.InternalMarshalizer(),
+		AccountFactory:         accountFactory,
+		StoragePruningManager:  storagePruning,
+		AddressConverter:       args.coreComponents.AddressPubKeyConverter(),
+		SnapshotsManager:       disabledState.NewDisabledSnapshotsManager(),
+		StateAccessesCollector: disabledState.NewDisabledStateAccessesCollector(),
 	}
 
 	provider, err := blockInfoProviders.NewCurrentBlockInfo(chainHandler)
@@ -728,6 +735,8 @@ func createAPIBlockProcessorArgs(args *ApiResolverArgs, apiTransactionHandler ex
 		AccountsRepository:           args.StateComponents.AccountsRepository(),
 		ScheduledTxsExecutionHandler: args.ProcessComponents.ScheduledTxsExecutionHandler(),
 		EnableEpochsHandler:          args.CoreComponents.EnableEpochsHandler(),
+		ProofsPool:                   args.DataComponents.Datapool().Proofs(),
+		BlockChain:                   args.DataComponents.Blockchain(),
 	}
 
 	return blockApiArgs, nil

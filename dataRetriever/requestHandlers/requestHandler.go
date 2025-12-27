@@ -2,6 +2,7 @@ package requestHandlers
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"runtime/debug"
 	"sync"
@@ -14,7 +15,7 @@ import (
 	"github.com/multiversx/mx-chain-go/dataRetriever"
 	"github.com/multiversx/mx-chain-go/epochStart"
 	"github.com/multiversx/mx-chain-go/process/factory"
-	"github.com/multiversx/mx-chain-logger-go"
+	logger "github.com/multiversx/mx-chain-logger-go"
 )
 
 var _ epochStart.RequestHandler = (*resolverRequestHandler)(nil)
@@ -31,6 +32,7 @@ const uniqueHeadersSuffix = "hdr"
 const uniqueMetaHeadersSuffix = "mhdr"
 const uniqueTrieNodesSuffix = "tn"
 const uniqueValidatorInfoSuffix = "vi"
+const uniqueEquivalentProofSuffix = "eqp"
 
 // TODO move the keys definitions that are whitelisted in core and use them in InterceptedData implementations, Identifiers() function
 
@@ -299,9 +301,11 @@ func (rrh *resolverRequestHandler) RequestShardHeader(shardID uint32, hash []byt
 		return
 	}
 
+	epoch := rrh.getEpoch()
 	log.Debug("requesting shard header from network",
 		"shard", shardID,
 		"hash", hash,
+		"epoch", epoch,
 	)
 
 	headerRequester, err := rrh.getShardHeaderRequester(shardID)
@@ -315,7 +319,6 @@ func (rrh *resolverRequestHandler) RequestShardHeader(shardID uint32, hash []byt
 
 	rrh.whiteList.Add([][]byte{hash})
 
-	epoch := rrh.getEpoch()
 	err = headerRequester.RequestDataFromHash(hash, epoch)
 	if err != nil {
 		log.Debug("RequestShardHeader.RequestDataFromHash",
@@ -571,10 +574,12 @@ func (rrh *resolverRequestHandler) RequestValidatorInfo(hash []byte) {
 		return
 	}
 
+	epoch := rrh.getEpoch()
+
 	log.Debug("requesting validator info messages from network",
 		"topic", common.ValidatorInfoTopic,
 		"hash", hash,
-		"epoch", rrh.epoch,
+		"epoch", epoch,
 	)
 
 	requester, err := rrh.requestersFinder.MetaChainRequester(common.ValidatorInfoTopic)
@@ -583,20 +588,20 @@ func (rrh *resolverRequestHandler) RequestValidatorInfo(hash []byte) {
 			"error", err.Error(),
 			"topic", common.ValidatorInfoTopic,
 			"hash", hash,
-			"epoch", rrh.epoch,
+			"epoch", epoch,
 		)
 		return
 	}
 
 	rrh.whiteList.Add([][]byte{hash})
 
-	err = requester.RequestDataFromHash(hash, rrh.epoch)
+	err = requester.RequestDataFromHash(hash, epoch)
 	if err != nil {
 		log.Debug("RequestValidatorInfo.RequestDataFromHash",
 			"error", err.Error(),
 			"topic", common.ValidatorInfoTopic,
 			"hash", hash,
-			"epoch", rrh.epoch,
+			"epoch", epoch,
 		)
 		return
 	}
@@ -611,10 +616,12 @@ func (rrh *resolverRequestHandler) RequestValidatorsInfo(hashes [][]byte) {
 		return
 	}
 
+	epoch := rrh.getEpoch()
+
 	log.Debug("requesting validator info messages from network",
 		"topic", common.ValidatorInfoTopic,
 		"num hashes", len(unrequestedHashes),
-		"epoch", rrh.epoch,
+		"epoch", epoch,
 	)
 
 	requester, err := rrh.requestersFinder.MetaChainRequester(common.ValidatorInfoTopic)
@@ -623,7 +630,7 @@ func (rrh *resolverRequestHandler) RequestValidatorsInfo(hashes [][]byte) {
 			"error", err.Error(),
 			"topic", common.ValidatorInfoTopic,
 			"num hashes", len(unrequestedHashes),
-			"epoch", rrh.epoch,
+			"epoch", epoch,
 		)
 		return
 	}
@@ -636,13 +643,13 @@ func (rrh *resolverRequestHandler) RequestValidatorsInfo(hashes [][]byte) {
 
 	rrh.whiteList.Add(unrequestedHashes)
 
-	err = validatorInfoRequester.RequestDataFromHashArray(unrequestedHashes, rrh.epoch)
+	err = validatorInfoRequester.RequestDataFromHashArray(unrequestedHashes, epoch)
 	if err != nil {
 		log.Debug("RequestValidatorInfo.RequestDataFromHash",
 			"error", err.Error(),
 			"topic", common.ValidatorInfoTopic,
 			"num hashes", len(unrequestedHashes),
-			"epoch", rrh.epoch,
+			"epoch", epoch,
 		)
 		return
 	}
@@ -827,11 +834,13 @@ func (rrh *resolverRequestHandler) GetNumPeersToQuery(key string) (int, int, err
 
 // RequestPeerAuthenticationsByHashes asks for peer authentication messages from specific peers hashes
 func (rrh *resolverRequestHandler) RequestPeerAuthenticationsByHashes(destShardID uint32, hashes [][]byte) {
+	epoch := rrh.getEpoch()
+
 	log.Debug("requesting peer authentication messages from network",
 		"topic", common.PeerAuthenticationTopic,
 		"shard", destShardID,
 		"num hashes", len(hashes),
-		"epoch", rrh.epoch,
+		"epoch", epoch,
 	)
 
 	requester, err := rrh.requestersFinder.MetaChainRequester(common.PeerAuthenticationTopic)
@@ -840,7 +849,7 @@ func (rrh *resolverRequestHandler) RequestPeerAuthenticationsByHashes(destShardI
 			"error", err.Error(),
 			"topic", common.PeerAuthenticationTopic,
 			"shard", destShardID,
-			"epoch", rrh.epoch,
+			"epoch", epoch,
 		)
 		return
 	}
@@ -851,13 +860,150 @@ func (rrh *resolverRequestHandler) RequestPeerAuthenticationsByHashes(destShardI
 		return
 	}
 
-	err = peerAuthRequester.RequestDataFromHashArray(hashes, rrh.epoch)
+	err = peerAuthRequester.RequestDataFromHashArray(hashes, epoch)
 	if err != nil {
 		log.Debug("RequestPeerAuthenticationsByHashes.RequestDataFromHashArray",
 			"error", err.Error(),
 			"topic", common.PeerAuthenticationTopic,
 			"shard", destShardID,
-			"epoch", rrh.epoch,
+			"epoch", epoch,
 		)
 	}
+}
+
+// RequestEquivalentProofByHash asks for equivalent proof for the provided header hash
+func (rrh *resolverRequestHandler) RequestEquivalentProofByHash(headerShard uint32, headerHash []byte) {
+	if !rrh.testIfRequestIsNeeded(headerHash, uniqueEquivalentProofSuffix) {
+		return
+	}
+
+	epoch := rrh.getEpoch()
+	encodedHash := hex.EncodeToString(headerHash)
+	log.Debug("requesting equivalent proof from network",
+		"headerHash", encodedHash,
+		"shard", headerShard,
+		"epoch", epoch,
+	)
+
+	requester, err := rrh.getEquivalentProofsRequester(headerShard)
+	if err != nil {
+		log.Error("RequestEquivalentProofByHash.getEquivalentProofsRequester",
+			"error", err.Error(),
+			"headerHash", encodedHash,
+			"epoch", epoch,
+		)
+		return
+	}
+
+	rrh.whiteList.Add([][]byte{headerHash})
+
+	requestKey := fmt.Sprintf("%s-%d", encodedHash, headerShard)
+	err = requester.RequestDataFromHash([]byte(requestKey), epoch)
+	if err != nil {
+		log.Debug("RequestEquivalentProofByHash.RequestDataFromHash",
+			"error", err.Error(),
+			"headerHash", encodedHash,
+			"headerShard", headerShard,
+			"epoch", epoch,
+		)
+		return
+	}
+
+	rrh.addRequestedItems([][]byte{headerHash}, uniqueEquivalentProofSuffix)
+}
+
+// RequestEquivalentProofByNonce asks for equivalent proof for the provided header nonce
+func (rrh *resolverRequestHandler) RequestEquivalentProofByNonce(headerShard uint32, headerNonce uint64) {
+	key := common.GetEquivalentProofNonceShardKey(headerNonce, headerShard)
+	if !rrh.testIfRequestIsNeeded([]byte(key), uniqueEquivalentProofSuffix) {
+		return
+	}
+
+	epoch := rrh.getEpoch()
+	log.Debug("requesting equivalent proof by nonce from network",
+		"headerNonce", headerNonce,
+		"headerShard", headerShard,
+		"epoch", epoch,
+	)
+
+	requester, err := rrh.getEquivalentProofsRequester(headerShard)
+	if err != nil {
+		log.Error("RequestEquivalentProofByNonce.getEquivalentProofsRequester",
+			"error", err.Error(),
+			"headerNonce", headerNonce,
+		)
+		return
+	}
+
+	proofsRequester, ok := requester.(EquivalentProofsRequester)
+	if !ok {
+		log.Warn("wrong assertion type when creating equivalent proofs requester")
+		return
+	}
+
+	rrh.whiteList.Add([][]byte{[]byte(key)})
+
+	err = proofsRequester.RequestDataFromNonce([]byte(key), epoch)
+	if err != nil {
+		log.Debug("RequestEquivalentProofByNonce.RequestDataFromNonce",
+			"error", err.Error(),
+			"headerNonce", headerNonce,
+			"headerShard", headerShard,
+			"epoch", epoch,
+		)
+		return
+	}
+
+	rrh.addRequestedItems([][]byte{[]byte(key)}, uniqueEquivalentProofSuffix)
+}
+
+func (rrh *resolverRequestHandler) getEquivalentProofsRequester(headerShard uint32) (dataRetriever.Requester, error) {
+	// there are multiple scenarios for equivalent proofs:
+	// 1. self meta  requesting meta proof  -> should request on equivalentProofs_ALL
+	// 2. self meta  requesting shard proof -> should request on equivalentProofs_shard_META
+	// 3. self shard requesting intra proof -> should request on equivalentProofs_self_META
+	// 4. self shard requesting meta proof  -> should request on equivalentProofs_ALL
+	// 4. self shard requesting cross proof -> should never happen!
+
+	isSelfMeta := rrh.shardID == core.MetachainShardId
+	isRequestForMeta := headerShard == core.MetachainShardId
+	shardIdMissmatch := rrh.shardID != headerShard && !isRequestForMeta && !isSelfMeta
+	isRequestInvalid := !isSelfMeta && shardIdMissmatch
+	if isRequestInvalid {
+		return nil, dataRetriever.ErrBadRequest
+	}
+
+	if isRequestForMeta {
+		topic := common.EquivalentProofsTopic + core.CommunicationIdentifierBetweenShards(core.MetachainShardId, core.AllShardId)
+		requester, err := rrh.requestersFinder.MetaChainRequester(topic)
+		if err != nil {
+			err = fmt.Errorf("%w, topic: %s, current shard ID: %d, requested header shard ID: %d",
+				err, topic, rrh.shardID, headerShard)
+
+			log.Warn("available requesters in container",
+				"requesters", rrh.requestersFinder.RequesterKeys(),
+			)
+			return nil, err
+		}
+
+		return requester, nil
+	}
+
+	crossShardID := core.MetachainShardId
+	if isSelfMeta {
+		crossShardID = headerShard
+	}
+
+	requester, err := rrh.requestersFinder.CrossShardRequester(common.EquivalentProofsTopic, crossShardID)
+	if err != nil {
+		err = fmt.Errorf("%w, base topic: %s, current shard ID: %d, cross shard ID: %d",
+			err, common.EquivalentProofsTopic, rrh.shardID, crossShardID)
+
+		log.Warn("available requesters in container",
+			"requesters", rrh.requestersFinder.RequesterKeys(),
+		)
+		return nil, err
+	}
+
+	return requester, nil
 }

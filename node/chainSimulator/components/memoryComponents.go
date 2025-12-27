@@ -9,11 +9,11 @@ import (
 
 // CreateMemUnit creates a new in-memory storage unit
 func CreateMemUnit() storage.Storer {
-	capacity := uint32(10)
+	capacity := uint32(10_000_000)
 	shards := uint32(1)
 	sizeInBytes := uint64(0)
 	cache, _ := storageunit.NewCache(storageunit.CacheConfig{Type: storageunit.LRUCache, Capacity: capacity, Shards: shards, SizeInBytes: sizeInBytes})
-	persist, _ := database.NewlruDB(100000)
+	persist, _ := database.NewlruDB(10_000_000)
 	unit, _ := storageunit.NewStorageUnit(cache, persist)
 
 	return unit
@@ -35,7 +35,7 @@ func (store *trieStorage) SetEpochForPutOperation(_ uint32) {
 }
 
 // GetFromOldEpochsWithoutAddingToCache tries to get directly the key
-func (store *trieStorage) GetFromOldEpochsWithoutAddingToCache(key []byte) ([]byte, core.OptionalUint32, error) {
+func (store *trieStorage) GetFromOldEpochsWithoutAddingToCache(key []byte, _ uint32) ([]byte, core.OptionalUint32, error) {
 	value, err := store.Get(key)
 
 	return value, core.OptionalUint32{}, err

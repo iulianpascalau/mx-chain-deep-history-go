@@ -10,7 +10,7 @@ import (
 
 // SCProcessorMock -
 type SCProcessorMock struct {
-	ComputeTransactionTypeCalled           func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType)
+	ComputeTransactionTypeCalled           func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType, bool)
 	ExecuteSmartContractTransactionCalled  func(tx data.TransactionHandler, acntSrc, acntDst state.UserAccountHandler) (vmcommon.ReturnCode, error)
 	ExecuteBuiltInFunctionCalled           func(tx data.TransactionHandler, acntSrc, acntDst state.UserAccountHandler) (vmcommon.ReturnCode, error)
 	DeploySmartContractCalled              func(tx data.TransactionHandler, acntSrc state.UserAccountHandler) (vmcommon.ReturnCode, error)
@@ -18,6 +18,16 @@ type SCProcessorMock struct {
 	ProcessIfErrorCalled                   func(acntSnd state.UserAccountHandler, txHash []byte, tx data.TransactionHandler, returnCode string, returnMessage []byte, snapshot int, gasLocked uint64) error
 	IsPayableCalled                        func(sndAddress, recvAddress []byte) (bool, error)
 	CheckBuiltinFunctionIsExecutableCalled func(expectedBuiltinFunction string, tx data.TransactionHandler) error
+	ComputeTransactionTypeInEpochCalled    func(tx data.TransactionHandler, epoch uint32) (process.TransactionType, process.TransactionType, bool)
+}
+
+// ComputeTransactionTypeInEpoch -
+func (sc *SCProcessorMock) ComputeTransactionTypeInEpoch(tx data.TransactionHandler, epoch uint32) (process.TransactionType, process.TransactionType, bool) {
+	if sc.ComputeTransactionTypeInEpochCalled == nil {
+		return process.MoveBalance, process.MoveBalance, false
+	}
+
+	return sc.ComputeTransactionTypeInEpochCalled(tx, epoch)
 }
 
 // IsPayable -
@@ -45,9 +55,9 @@ func (sc *SCProcessorMock) ProcessIfError(
 }
 
 // ComputeTransactionType -
-func (sc *SCProcessorMock) ComputeTransactionType(tx data.TransactionHandler) (process.TransactionType, process.TransactionType) {
+func (sc *SCProcessorMock) ComputeTransactionType(tx data.TransactionHandler) (process.TransactionType, process.TransactionType, bool) {
 	if sc.ComputeTransactionTypeCalled == nil {
-		return process.MoveBalance, process.MoveBalance
+		return process.MoveBalance, process.MoveBalance, false
 	}
 
 	return sc.ComputeTransactionTypeCalled(tx)

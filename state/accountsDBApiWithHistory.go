@@ -6,9 +6,10 @@ import (
 	"sync"
 
 	"github.com/multiversx/mx-chain-core-go/core/check"
+	vmcommon "github.com/multiversx/mx-chain-vm-common-go"
+
 	"github.com/multiversx/mx-chain-go/common"
 	"github.com/multiversx/mx-chain-go/common/holders"
-	vmcommon "github.com/multiversx/mx-chain-vm-common-go"
 )
 
 type accountsDBApiWithHistory struct {
@@ -94,12 +95,7 @@ func (accountsDB *accountsDBApiWithHistory) RootHash() ([]byte, error) {
 }
 
 // RecreateTrie is a not permitted operation in this implementation and thus, will return an error
-func (accountsDB *accountsDBApiWithHistory) RecreateTrie(_ []byte) error {
-	return ErrOperationNotPermitted
-}
-
-// RecreateTrieFromEpoch is a not permitted operation in this implementation and thus, will return an error
-func (accountsDB *accountsDBApiWithHistory) RecreateTrieFromEpoch(_ common.RootHashHolder) error {
+func (accountsDB *accountsDBApiWithHistory) RecreateTrie(_ common.RootHashHolder) error {
 	return ErrOperationNotPermitted
 }
 
@@ -138,6 +134,10 @@ func (accountsDB *accountsDBApiWithHistory) GetTrie(_ []byte) (common.Trie, erro
 // GetStackDebugFirstEntry returns nil
 func (accountsDB *accountsDBApiWithHistory) GetStackDebugFirstEntry() []byte {
 	return nil
+}
+
+// SetTxHashForLatestStateAccesses returns nil
+func (accountsDB *accountsDBApiWithHistory) SetTxHashForLatestStateAccesses(_ []byte) {
 }
 
 // Close will handle the closing of the underlying components
@@ -228,7 +228,7 @@ func (accountsDB *accountsDBApiWithHistory) shouldRecreateTrieUnprotected(rootHa
 }
 
 func (accountsDB *accountsDBApiWithHistory) recreateTrieUnprotected(options common.RootHashHolder) error {
-	err := accountsDB.innerAccountsAdapter.RecreateTrieFromEpoch(options)
+	err := accountsDB.innerAccountsAdapter.RecreateTrie(options)
 	if err != nil {
 		return err
 	}

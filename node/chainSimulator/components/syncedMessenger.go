@@ -80,18 +80,26 @@ func (messenger *syncedMessenger) receive(fromConnectedPeer core.PeerID, message
 	handlers := messenger.topics[message.Topic()]
 	messenger.mutOperation.RUnlock()
 
+	wg := &sync.WaitGroup{}
+	wg.Add(len(handlers))
 	for _, handler := range handlers {
-		err := handler.ProcessReceivedMessage(message, fromConnectedPeer, messenger)
-		if err != nil {
-			log.Trace("received message syncedMessenger",
-				"error", err, "topic", message.Topic(), "from connected peer", fromConnectedPeer.Pretty())
-		}
+		// this is needed to process all received messages on multiple go routines
+		go func(proc p2p.MessageProcessor, p2pMessage p2p.MessageP2P, peer core.PeerID, localWG *sync.WaitGroup) {
+			_, err := proc.ProcessReceivedMessage(p2pMessage, peer, messenger)
+			if err != nil {
+				log.Trace("received message syncedMessenger", "error", err, "topic", p2pMessage.Topic(), "from connected peer", peer.Pretty())
+			}
+
+			localWG.Done()
+		}(handler, message, fromConnectedPeer, wg)
 	}
+
+	wg.Wait()
 }
 
 // ProcessReceivedMessage does nothing and returns nil
-func (messenger *syncedMessenger) ProcessReceivedMessage(_ p2p.MessageP2P, _ core.PeerID, _ p2p.MessageHandler) error {
-	return nil
+func (messenger *syncedMessenger) ProcessReceivedMessage(_ p2p.MessageP2P, _ core.PeerID, _ p2p.MessageHandler) ([]byte, error) {
+	return nil, nil
 }
 
 // CreateTopic will create a topic for receiving data
@@ -362,11 +370,6 @@ func (messenger *syncedMessenger) Verify(payload []byte, pid core.PeerID, signat
 // SignUsingPrivateKey will return an empty byte slice
 func (messenger *syncedMessenger) SignUsingPrivateKey(_ []byte, _ []byte) ([]byte, error) {
 	return make([]byte, 0), nil
-}
-
-// AddPeerTopicNotifier does nothing and returns nil
-func (messenger *syncedMessenger) AddPeerTopicNotifier(_ p2p.PeerTopicNotifier) error {
-	return nil
 }
 
 // SetDebugger will set the provided debugger

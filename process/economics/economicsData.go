@@ -13,6 +13,7 @@ import (
 	"github.com/multiversx/mx-chain-go/common"
 	"github.com/multiversx/mx-chain-go/config"
 	"github.com/multiversx/mx-chain-go/process"
+	"github.com/multiversx/mx-chain-go/sharding"
 	"github.com/multiversx/mx-chain-go/statusHandler"
 	logger "github.com/multiversx/mx-chain-logger-go"
 )
@@ -27,10 +28,8 @@ var log = logger.GetOrCreate("process/economics")
 type economicsData struct {
 	*gasConfigHandler
 	*rewardsConfigHandler
+	*globalSettingsHandler
 	gasPriceModifier    float64
-	minInflation        float64
-	yearSettings        map[uint32]*config.YearSetting
-	mutYearSettings     sync.RWMutex
 	statusHandler       core.AppStatusHandler
 	enableEpochsHandler common.EnableEpochsHandler
 	txVersionHandler    process.TxVersionCheckerHandler
@@ -41,8 +40,11 @@ type economicsData struct {
 type ArgsNewEconomicsData struct {
 	TxVersionChecker    process.TxVersionCheckerHandler
 	Economics           *config.EconomicsConfig
+	GeneralConfig       *config.Config
 	EpochNotifier       process.EpochNotifier
 	EnableEpochsHandler common.EnableEpochsHandler
+	PubkeyConverter     core.PubkeyConverter
+	ShardCoordinator    sharding.Coordinator
 }
 
 // NewEconomicsData will create an object with information about economics parameters
@@ -55,6 +57,12 @@ func NewEconomicsData(args ArgsNewEconomicsData) (*economicsData, error) {
 	}
 	if check.IfNil(args.EnableEpochsHandler) {
 		return nil, process.ErrNilEnableEpochsHandler
+	}
+	if check.IfNil(args.PubkeyConverter) {
+		return nil, process.ErrNilPubkeyConverter
+	}
+	if check.IfNil(args.ShardCoordinator) {
+		return nil, process.ErrNilShardCoordinator
 	}
 	err := core.CheckHandlerCompatibility(args.EnableEpochsHandler, []core.EnableEpochFlag{
 		common.GasPriceModifierFlag,
@@ -70,19 +78,10 @@ func NewEconomicsData(args ArgsNewEconomicsData) (*economicsData, error) {
 	}
 
 	ed := &economicsData{
-		minInflation:        args.Economics.GlobalSettings.MinimumInflation,
 		gasPriceModifier:    args.Economics.FeeSettings.GasPriceModifier,
 		statusHandler:       statusHandler.NewNilStatusHandler(),
 		enableEpochsHandler: args.EnableEpochsHandler,
 		txVersionHandler:    args.TxVersionChecker,
-	}
-
-	ed.yearSettings = make(map[uint32]*config.YearSetting)
-	for _, yearSetting := range args.Economics.GlobalSettings.YearSettings {
-		ed.yearSettings[yearSetting.Year] = &config.YearSetting{
-			Year:             yearSetting.Year,
-			MaximumInflation: yearSetting.MaximumInflation,
-		}
 	}
 
 	ed.gasConfigHandler, err = newGasConfigHandler(args.Economics)
@@ -90,7 +89,12 @@ func NewEconomicsData(args ArgsNewEconomicsData) (*economicsData, error) {
 		return nil, err
 	}
 
-	ed.rewardsConfigHandler, err = newRewardsConfigHandler(args.Economics.RewardsSettings)
+	ed.rewardsConfigHandler, err = newRewardsConfigHandler(args.Economics.RewardsSettings, args.PubkeyConverter, args.ShardCoordinator)
+	if err != nil {
+		return nil, err
+	}
+
+	ed.globalSettingsHandler, err = newGlobalSettingsHandler(args.Economics, args.GeneralConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -148,22 +152,14 @@ func (ed *economicsData) LeaderPercentageInEpoch(epoch uint32) float64 {
 	return ed.getLeaderPercentage(epoch)
 }
 
-// MinInflationRate returns the minimum inflation rate
-func (ed *economicsData) MinInflationRate() float64 {
-	return ed.minInflation
+// MaxInflationRate returns the maximum inflation rate
+func (ed *economicsData) MaxInflationRate(year uint32, epoch uint32) float64 {
+	return ed.globalSettingsHandler.maxInflationRate(year, epoch)
 }
 
-// MaxInflationRate returns the maximum inflation rate
-func (ed *economicsData) MaxInflationRate(year uint32) float64 {
-	ed.mutYearSettings.RLock()
-	yearSetting, ok := ed.yearSettings[year]
-	ed.mutYearSettings.RUnlock()
-
-	if !ok {
-		return ed.minInflation
-	}
-
-	return yearSetting.MaximumInflation
+// IsTailInflationEnabled returns if the tail inflation is enabled
+func (ed *economicsData) IsTailInflationEnabled(epoch uint32) bool {
+	return ed.globalSettingsHandler.isTailInflationActive(epoch)
 }
 
 // GenesisTotalSupply returns the genesis total supply
@@ -400,6 +396,17 @@ func (ed *economicsData) MaxGasLimitPerBlockForSafeCrossShard() uint64 {
 	return ed.MaxGasLimitPerBlockForSafeCrossShardInEpoch(currentEpoch)
 }
 
+// MaxGasHigherFactorAccepted returns maximum gas higher factor accepted
+func (ed *economicsData) MaxGasHigherFactorAccepted() uint64 {
+	currentEpoch := ed.enableEpochsHandler.GetCurrentEpoch()
+	return ed.MaxGasHigherFactorAcceptedInEpoch(currentEpoch)
+}
+
+// MaxGasHigherFactorAcceptedInEpoch returns maximum gas higher factor accepted for epoch
+func (ed *economicsData) MaxGasHigherFactorAcceptedInEpoch(epoch uint32) uint64 {
+	return ed.getGasHigherFactorAccepted(epoch)
+}
+
 // MaxGasLimitPerBlockForSafeCrossShardInEpoch returns maximum gas limit per block for safe cross shard in a specific epoch
 func (ed *economicsData) MaxGasLimitPerBlockForSafeCrossShardInEpoch(epoch uint32) uint64 {
 	return ed.getMaxGasLimitPerBlockForSafeCrossShard(epoch)
@@ -449,13 +456,13 @@ func (ed *economicsData) ProtocolSustainabilityPercentageInEpoch(epoch uint32) f
 	return ed.getProtocolSustainabilityPercentage(epoch)
 }
 
-// ProtocolSustainabilityAddress returns the protocol sustainability address
+// ProtocolSustainabilityAddress returns the decoded protocol sustainability address
 func (ed *economicsData) ProtocolSustainabilityAddress() string {
 	currentEpoch := ed.enableEpochsHandler.GetCurrentEpoch()
 	return ed.ProtocolSustainabilityAddressInEpoch(currentEpoch)
 }
 
-// ProtocolSustainabilityAddressInEpoch returns the protocol sustainability address in a specific epoch
+// ProtocolSustainabilityAddressInEpoch returns the decoded protocol sustainability address in a specific epoch
 func (ed *economicsData) ProtocolSustainabilityAddressInEpoch(epoch uint32) string {
 	return ed.getProtocolSustainabilityAddress(epoch)
 }
@@ -488,15 +495,19 @@ func (ed *economicsData) ComputeGasLimit(tx data.TransactionWithFeeHandler) uint
 	return ed.ComputeGasLimitInEpoch(tx, currentEpoch)
 }
 
-// ComputeGasLimitInEpoch returns the gas limit need by the provided transaction in order to be executed in a specific epoch
+// ComputeGasLimitInEpoch returns the gas limit needed by the provided transaction in order to be executed in a specific epoch
 func (ed *economicsData) ComputeGasLimitInEpoch(tx data.TransactionWithFeeHandler, epoch uint32) uint64 {
 	gasLimit := ed.getMinGasLimit(epoch)
 
 	dataLen := uint64(len(tx.GetData()))
 	gasLimit += dataLen * ed.gasPerDataByte
 	txInstance, ok := tx.(*transaction.Transaction)
-	if ok && ed.txVersionHandler.IsGuardedTransaction(txInstance) {
-		gasLimit += ed.getExtraGasLimitGuardedTx(epoch)
+	if ok {
+		if ed.txVersionHandler.IsGuardedTransaction(txInstance) {
+			gasLimit += ed.getExtraGasLimitGuardedTx(epoch)
+		}
+
+		gasLimit += ed.getExtraGasLimitRelayedTx(txInstance, epoch)
 	}
 
 	return gasLimit
@@ -575,6 +586,15 @@ func (ed *economicsData) ComputeGasLimitBasedOnBalance(tx data.TransactionWithFe
 	return ed.ComputeGasLimitBasedOnBalanceInEpoch(tx, balance, currentEpoch)
 }
 
+// ComputeGasUnitsFromRefundValue will compute the gas unit based on the refund value
+func (ed *economicsData) ComputeGasUnitsFromRefundValue(tx data.TransactionWithFeeHandler, refundValue *big.Int, epoch uint32) uint64 {
+	gasPrice := ed.GasPriceForProcessingInEpoch(tx, epoch)
+	refund := big.NewInt(0).Set(refundValue)
+	gasUnits := refund.Div(refund, big.NewInt(int64(gasPrice)))
+
+	return gasUnits.Uint64()
+}
+
 // ComputeGasLimitBasedOnBalanceInEpoch will compute gas limit for the given transaction based on the balance in a specific epoch
 func (ed *economicsData) ComputeGasLimitBasedOnBalanceInEpoch(tx data.TransactionWithFeeHandler, balance *big.Int, epoch uint32) (uint64, error) {
 	balanceWithoutTransferValue := big.NewInt(0).Sub(balance, tx.GetValue())
@@ -603,6 +623,35 @@ func (ed *economicsData) ComputeGasLimitBasedOnBalanceInEpoch(tx data.Transactio
 	totalGasLimit := gasLimitMoveBalance + gasLimitFromRemainedBalanceBig.Uint64()
 
 	return totalGasLimit, nil
+}
+
+// getExtraGasLimitRelayedTx returns extra gas limit for relayed tx in a specific epoch
+func (ed *economicsData) getExtraGasLimitRelayedTx(txInstance *transaction.Transaction, epoch uint32) uint64 {
+	if common.IsRelayedTxV3(txInstance) {
+		return ed.MinGasLimitInEpoch(epoch)
+	}
+
+	return 0
+}
+
+// EcosystemGrowthPercentageInEpoch returns the ecosystem growth percentage in a specific epoch
+func (ed *economicsData) EcosystemGrowthPercentageInEpoch(epoch uint32) float64 {
+	return ed.rewardsConfigHandler.getEcosystemGrowthPercentage(epoch)
+}
+
+// EcosystemGrowthAddressInEpoch returns the ecosystem growth address in a specific epoch
+func (ed *economicsData) EcosystemGrowthAddressInEpoch(epoch uint32) string {
+	return ed.rewardsConfigHandler.getEcosystemGrowthAddress(epoch)
+}
+
+// GrowthDividendPercentageInEpoch returns the growth dividend percentage in a specific epoch
+func (ed *economicsData) GrowthDividendPercentageInEpoch(epoch uint32) float64 {
+	return ed.rewardsConfigHandler.getGrowthDividendPercentage(epoch)
+}
+
+// GrowthDividendAddressInEpoch returns the growth dividend address in a specific epoch
+func (ed *economicsData) GrowthDividendAddressInEpoch(epoch uint32) string {
+	return ed.rewardsConfigHandler.getGrowthDividendAddress(epoch)
 }
 
 // IsInterfaceNil returns true if there is no value under the interface

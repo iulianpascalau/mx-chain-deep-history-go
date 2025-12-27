@@ -40,7 +40,7 @@ func TestNewGasComputation_NilEnableEpochsHandlerShouldErr(t *testing.T) {
 	t.Parallel()
 
 	gc, err := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{},
+		&economicsmocks.EconomicsHandlerMock{},
 		&testscommon.TxTypeHandlerMock{},
 		nil,
 	)
@@ -53,7 +53,7 @@ func TestNewGasComputation_InvalidEnableEpochsHandlerShouldErr(t *testing.T) {
 	t.Parallel()
 
 	gc, err := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{},
+		&economicsmocks.EconomicsHandlerMock{},
 		&testscommon.TxTypeHandlerMock{},
 		enableEpochsHandlerMock.NewEnableEpochsHandlerStubWithNoFlagsDefined(),
 	)
@@ -66,7 +66,7 @@ func TestNewGasComputation_ShouldWork(t *testing.T) {
 	t.Parallel()
 
 	gc, err := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{},
+		&economicsmocks.EconomicsHandlerMock{},
 		&testscommon.TxTypeHandlerMock{},
 		createEnableEpochsHandler(),
 	)
@@ -79,7 +79,7 @@ func TestGasProvided_ShouldWork(t *testing.T) {
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{},
+		&economicsmocks.EconomicsHandlerMock{},
 		&testscommon.TxTypeHandlerMock{},
 		createEnableEpochsHandler(),
 	)
@@ -111,7 +111,7 @@ func TestGasRefunded_ShouldWork(t *testing.T) {
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{},
+		&economicsmocks.EconomicsHandlerMock{},
 		&testscommon.TxTypeHandlerMock{},
 		createEnableEpochsHandler(),
 	)
@@ -143,7 +143,7 @@ func TestGasPenalized_ShouldWork(t *testing.T) {
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{},
+		&economicsmocks.EconomicsHandlerMock{},
 		&testscommon.TxTypeHandlerMock{},
 		createEnableEpochsHandler(),
 	)
@@ -175,7 +175,7 @@ func TestComputeGasProvidedByTx_ShouldErrWrongTypeAssertion(t *testing.T) {
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{},
+		&economicsmocks.EconomicsHandlerMock{},
 		&testscommon.TxTypeHandlerMock{},
 		createEnableEpochsHandler(),
 	)
@@ -188,7 +188,7 @@ func TestComputeGasProvidedByTx_ShouldWorkWhenTxReceiverAddressIsNotASmartContra
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{
+		&economicsmocks.EconomicsHandlerMock{
 			ComputeGasLimitCalled: func(tx data.TransactionWithFeeHandler) uint64 {
 				return 6
 			},
@@ -208,14 +208,14 @@ func TestComputeGasProvidedByTx_ShouldWorkWhenTxReceiverAddressIsASmartContractI
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{
+		&economicsmocks.EconomicsHandlerMock{
 			ComputeGasLimitCalled: func(tx data.TransactionWithFeeHandler) uint64 {
 				return 6
 			},
 		},
 		&testscommon.TxTypeHandlerMock{
-			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType) {
-				return process.SCInvoking, process.SCInvoking
+			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType, bool) {
+				return process.SCInvoking, process.SCInvoking, false
 			}},
 		createEnableEpochsHandler(),
 	)
@@ -231,14 +231,14 @@ func TestComputeGasProvidedByTx_ShouldWorkWhenTxReceiverAddressIsASmartContractC
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{
+		&economicsmocks.EconomicsHandlerMock{
 			ComputeGasLimitCalled: func(tx data.TransactionWithFeeHandler) uint64 {
 				return 6
 			},
 		},
 		&testscommon.TxTypeHandlerMock{
-			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType) {
-				return process.MoveBalance, process.SCInvoking
+			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType, bool) {
+				return process.MoveBalance, process.SCInvoking, false
 			}},
 		createEnableEpochsHandler(),
 	)
@@ -254,14 +254,14 @@ func TestComputeGasProvidedByTx_ShouldReturnZeroIf0GasLimit(t *testing.T) {
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{
+		&economicsmocks.EconomicsHandlerMock{
 			ComputeGasLimitCalled: func(tx data.TransactionWithFeeHandler) uint64 {
 				return 6
 			},
 		},
 		&testscommon.TxTypeHandlerMock{
-			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType) {
-				return process.MoveBalance, process.SCInvoking
+			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType, bool) {
+				return process.MoveBalance, process.SCInvoking, false
 			}},
 		createEnableEpochsHandler(),
 	)
@@ -277,14 +277,14 @@ func TestComputeGasProvidedByTx_ShouldReturnGasLimitIfLessThanMoveBalance(t *tes
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{
+		&economicsmocks.EconomicsHandlerMock{
 			ComputeGasLimitCalled: func(tx data.TransactionWithFeeHandler) uint64 {
 				return 6
 			},
 		},
 		&testscommon.TxTypeHandlerMock{
-			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType) {
-				return process.MoveBalance, process.SCInvoking
+			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType, bool) {
+				return process.MoveBalance, process.SCInvoking, false
 			}},
 		createEnableEpochsHandler(),
 	)
@@ -300,14 +300,14 @@ func TestComputeGasProvidedByTx_ShouldReturnGasLimitWhenRelayed(t *testing.T) {
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{
+		&economicsmocks.EconomicsHandlerMock{
 			ComputeGasLimitCalled: func(tx data.TransactionWithFeeHandler) uint64 {
 				return 0
 			},
 		},
 		&testscommon.TxTypeHandlerMock{
-			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType) {
-				return process.RelayedTx, process.RelayedTx
+			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType, bool) {
+				return process.RelayedTx, process.RelayedTx, false
 			}},
 		createEnableEpochsHandler(),
 	)
@@ -323,14 +323,14 @@ func TestComputeGasProvidedByTx_ShouldReturnGasLimitWhenRelayedV2(t *testing.T) 
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{
+		&economicsmocks.EconomicsHandlerMock{
 			ComputeGasLimitCalled: func(tx data.TransactionWithFeeHandler) uint64 {
 				return 0
 			},
 		},
 		&testscommon.TxTypeHandlerMock{
-			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType) {
-				return process.RelayedTxV2, process.RelayedTxV2
+			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType, bool) {
+				return process.RelayedTxV2, process.RelayedTxV2, false
 			}},
 		createEnableEpochsHandler(),
 	)
@@ -346,7 +346,7 @@ func TestComputeGasProvidedByMiniBlock_ShouldErrMissingTransaction(t *testing.T)
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{
+		&economicsmocks.EconomicsHandlerMock{
 			ComputeGasLimitCalled: func(tx data.TransactionWithFeeHandler) uint64 {
 				return 6
 			},
@@ -375,7 +375,7 @@ func TestComputeGasProvidedByMiniBlock_ShouldReturnZeroWhenOneTxIsMissing(t *tes
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{
+		&economicsmocks.EconomicsHandlerMock{
 			ComputeGasLimitCalled: func(tx data.TransactionWithFeeHandler) uint64 {
 				return 6
 			},
@@ -407,17 +407,17 @@ func TestComputeGasProvidedByMiniBlock_ShouldWork(t *testing.T) {
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{
+		&economicsmocks.EconomicsHandlerMock{
 			ComputeGasLimitCalled: func(tx data.TransactionWithFeeHandler) uint64 {
 				return 6
 			},
 		},
 		&testscommon.TxTypeHandlerMock{
-			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType) {
+			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType, bool) {
 				if core.IsSmartContractAddress(tx.GetRcvAddr()) {
-					return process.MoveBalance, process.SCInvoking
+					return process.MoveBalance, process.SCInvoking, false
 				}
-				return process.MoveBalance, process.MoveBalance
+				return process.MoveBalance, process.MoveBalance, false
 			}},
 		createEnableEpochsHandler(),
 	)
@@ -447,17 +447,17 @@ func TestComputeGasProvidedByMiniBlock_ShouldWorkV1(t *testing.T) {
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{
+		&economicsmocks.EconomicsHandlerMock{
 			ComputeGasLimitCalled: func(tx data.TransactionWithFeeHandler) uint64 {
 				return 6
 			},
 		},
 		&testscommon.TxTypeHandlerMock{
-			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType) {
+			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType, bool) {
 				if core.IsSmartContractAddress(tx.GetRcvAddr()) {
-					return process.SCInvoking, process.SCInvoking
+					return process.SCInvoking, process.SCInvoking, false
 				}
-				return process.MoveBalance, process.MoveBalance
+				return process.MoveBalance, process.MoveBalance, false
 			}},
 		enableEpochsHandlerMock.NewEnableEpochsHandlerStub(),
 	)
@@ -487,7 +487,7 @@ func TestComputeGasProvidedByTx_ShouldWorkWhenTxReceiverAddressIsNotASmartContra
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{
+		&economicsmocks.EconomicsHandlerMock{
 			ComputeGasLimitCalled: func(tx data.TransactionWithFeeHandler) uint64 {
 				return 6
 			},
@@ -507,14 +507,14 @@ func TestComputeGasProvidedByTx_ShouldWorkWhenTxReceiverAddressIsASmartContractI
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{
+		&economicsmocks.EconomicsHandlerMock{
 			ComputeGasLimitCalled: func(tx data.TransactionWithFeeHandler) uint64 {
 				return 6
 			},
 		},
 		&testscommon.TxTypeHandlerMock{
-			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType) {
-				return process.SCInvoking, process.SCInvoking
+			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType, bool) {
+				return process.SCInvoking, process.SCInvoking, false
 			}},
 		createEnableEpochsHandler(),
 	)
@@ -530,14 +530,14 @@ func TestComputeGasProvidedByTx_ShouldWorkWhenTxReceiverAddressIsASmartContractC
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{
+		&economicsmocks.EconomicsHandlerMock{
 			ComputeGasLimitCalled: func(tx data.TransactionWithFeeHandler) uint64 {
 				return 6
 			},
 		},
 		&testscommon.TxTypeHandlerMock{
-			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType) {
-				return process.SCInvoking, process.SCInvoking
+			ComputeTransactionTypeCalled: func(tx data.TransactionHandler) (process.TransactionType, process.TransactionType, bool) {
+				return process.SCInvoking, process.SCInvoking, false
 			}},
 		enableEpochsHandlerMock.NewEnableEpochsHandlerStub(),
 	)
@@ -553,7 +553,7 @@ func TestReset_ShouldWork(t *testing.T) {
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{},
+		&economicsmocks.EconomicsHandlerMock{},
 		&testscommon.TxTypeHandlerMock{},
 		createEnableEpochsHandler(),
 	)
@@ -590,7 +590,7 @@ func TestRestoreGasSinceLastReset_ShouldWork(t *testing.T) {
 	t.Parallel()
 
 	gc, _ := preprocess.NewGasComputation(
-		&economicsmocks.EconomicsHandlerStub{},
+		&economicsmocks.EconomicsHandlerMock{},
 		&testscommon.TxTypeHandlerMock{},
 		createEnableEpochsHandler(),
 	)

@@ -4,11 +4,13 @@ import (
 	"time"
 
 	"github.com/multiversx/mx-chain-core-go/core/check"
+	"github.com/multiversx/mx-chain-core-go/marshal"
 
 	"github.com/multiversx/mx-chain-go/config"
 	"github.com/multiversx/mx-chain-go/dataRetriever"
 	"github.com/multiversx/mx-chain-go/dataRetriever/dataPool"
 	"github.com/multiversx/mx-chain-go/dataRetriever/dataPool/headersCache"
+	proofscache "github.com/multiversx/mx-chain-go/dataRetriever/dataPool/proofsCache"
 	"github.com/multiversx/mx-chain-go/dataRetriever/shardedData"
 	"github.com/multiversx/mx-chain-go/dataRetriever/txpool"
 	"github.com/multiversx/mx-chain-go/storage"
@@ -33,6 +35,7 @@ type PoolsHolderMock struct {
 	peerAuthentications    storage.Cacher
 	heartbeats             storage.Cacher
 	validatorsInfo         dataRetriever.ShardedDataCacherNotifier
+	proofs                 dataRetriever.ProofsPool
 }
 
 // NewPoolsHolderMock -
@@ -49,11 +52,8 @@ func NewPoolsHolderMock() *PoolsHolderMock {
 				SizeInBytesPerSender: 10000000,
 				Shards:               16,
 			},
-			TxGasHandler: &txcachemocks.TxGasHandlerMock{
-				MinimumGasMove:       50000,
-				MinimumGasPrice:      200000000000,
-				GasProcessingDivisor: 100,
-			},
+			TxGasHandler:   txcachemocks.NewTxGasHandlerMock(),
+			Marshalizer:    &marshal.GogoProtoMarshalizer{},
 			NumberOfShards: 1,
 		},
 	)
@@ -109,6 +109,8 @@ func NewPoolsHolderMock() *PoolsHolderMock {
 		Shards:      1,
 	})
 	panicIfError("NewPoolsHolderMock", err)
+
+	holder.proofs = proofscache.NewProofsPool(3, 100)
 
 	return holder
 }
@@ -196,6 +198,11 @@ func (holder *PoolsHolderMock) Heartbeats() storage.Cacher {
 // ValidatorsInfo -
 func (holder *PoolsHolderMock) ValidatorsInfo() dataRetriever.ShardedDataCacherNotifier {
 	return holder.validatorsInfo
+}
+
+// Proofs -
+func (holder *PoolsHolderMock) Proofs() dataRetriever.ProofsPool {
+	return holder.proofs
 }
 
 // Close -
