@@ -148,7 +148,7 @@ func (boot *MetaBootstrap) StartSyncingBlocks() error {
 
 	// JLS: 2024.11.05: do not start block syncer
 	//var ctx context.Context
-	//ctx, boot.cancelFunc = context.WithCancel(context.Background())
+	_, boot.cancelFunc = context.WithCancel(context.Background())
 	//go boot.syncBlocks(ctx)
 
 	return nil
