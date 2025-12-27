@@ -18,6 +18,7 @@ import (
 	"github.com/multiversx/mx-chain-go/storage/factory"
 	"github.com/multiversx/mx-chain-go/storage/pathmanager"
 	"github.com/multiversx/mx-chain-go/storage/pruning"
+	"github.com/multiversx/mx-chain-go/testscommon"
 	logger "github.com/multiversx/mx-chain-logger-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -294,16 +295,13 @@ func TestFullHistoryPruningStorer_ConcurrentOperations(t *testing.T) {
 
 	fmt.Println(testDir)
 	args := getDefaultArgs()
-	dbConfigHandler := factory.NewDBConfigHandler(
-		config.DBConfig{
-			FilePath:          filepath.Join(testDir, dbName),
-			Type:              "LvlDBSerial",
-			MaxBatchSize:      100,
-			MaxOpenFiles:      10,
-			BatchDelaySeconds: 2,
-		},
-	)
-	persisterFactory, err := factory.NewPersisterFactory(dbConfigHandler)
+	persisterFactory, err := factory.NewPersisterFactory(config.DBConfig{
+		FilePath:          filepath.Join(testDir, dbName),
+		Type:              "LvlDBSerial",
+		MaxBatchSize:      100,
+		MaxOpenFiles:      10,
+		BatchDelaySeconds: 2,
+	})
 	require.Nil(t, err)
 	args.PersisterFactory = persisterFactory
 
@@ -401,4 +399,34 @@ func TestFullHistoryPruningStorer_IsInterfaceNil(t *testing.T) {
 	}
 	fhps, _ = pruning.NewFullHistoryPruningStorer(fhArgs)
 	require.False(t, fhps.IsInterfaceNil())
+}
+
+func TestFullHistoryPruningStorer_changeEpochClosesOldDbs(t *testing.T) {
+	t.Parallel()
+
+	shouldCleanCalled := false
+	args := getDefaultArgs()
+	fhArgs := pruning.FullHistoryStorerArgs{
+		StorerArgs:               args,
+		NumOfOldActivePersisters: 2,
+	}
+	fhArgs.OldDataCleanerProvider = &testscommon.OldDataCleanerProviderStub{
+		ShouldCleanCalled: func() bool {
+			shouldCleanCalled = true
+			return true
+		},
+	}
+	fhps, err := pruning.NewFullHistoryPruningStorer(fhArgs)
+	require.Nil(t, err)
+
+	numEpochsChanged := 10
+	startEpoch := uint32(0)
+	for i := 0; i < numEpochsChanged; i++ {
+		startEpoch++
+		key := []byte(fmt.Sprintf("key-%d", i))
+		_, _ = fhps.GetFromEpoch(key, startEpoch)
+		err = fhps.ChangeEpochSimple(startEpoch)
+		require.Nil(t, err)
+	}
+	require.True(t, shouldCleanCalled)
 }

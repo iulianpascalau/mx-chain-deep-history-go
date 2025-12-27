@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/multiversx/mx-chain-core-go/core"
 	"github.com/multiversx/mx-chain-core-go/core/check"
+	"github.com/multiversx/mx-chain-core-go/data/smartContractResult"
 	"github.com/multiversx/mx-chain-core-go/data/transaction"
 	"github.com/multiversx/mx-chain-go/api/errors"
 	"github.com/multiversx/mx-chain-go/api/middleware"
@@ -24,13 +25,17 @@ import (
 const (
 	sendTransactionEndpoint          = "/transaction/send"
 	simulateTransactionEndpoint      = "/transaction/simulate"
+	simulateSCRCostEndpoint          = "/transaction/cost-scr"
 	sendMultipleTransactionsEndpoint = "/transaction/send-multiple"
 	getTransactionEndpoint           = "/transaction/:hash"
+	getScrsByTxHashEndpoint          = "/transaction/scrs-by-tx-hash/:txhash"
 	sendTransactionPath              = "/send"
 	simulateTransactionPath          = "/simulate"
+	simulateSCRCostPath              = "/cost-scr"
 	costPath                         = "/cost"
 	sendMultiplePath                 = "/send-multiple"
 	getTransactionPath               = "/:txhash"
+	getScrsByTxHashPath              = "/scrs-by-tx-hash/:txhash"
 	getTransactionsPool              = "/pool"
 
 	queryParamWithResults    = "withResults"
@@ -39,6 +44,7 @@ const (
 	queryParamFields         = "fields"
 	queryParamLastNonce      = "last-nonce"
 	queryParamNonceGaps      = "nonce-gaps"
+	queryParameterScrHash    = "scrHash"
 )
 
 // transactionFacadeHandler defines the methods to be implemented by a facade for transaction requests
@@ -48,7 +54,9 @@ type transactionFacadeHandler interface {
 	ValidateTransactionForSimulation(tx *transaction.Transaction, checkSignature bool) error
 	SendBulkTransactions([]*transaction.Transaction) (uint64, error)
 	SimulateTransactionExecution(tx *transaction.Transaction) (*txSimData.SimulationResultsWithVMOutput, error)
+	SimulateSCRExecutionCost(scr *smartContractResult.SmartContractResult) (*transaction.CostResponse, error)
 	GetTransaction(hash string, withResults bool) (*transaction.ApiTransactionResult, error)
+	GetSCRsByTxHash(txHash string, scrHash string) ([]*transaction.ApiSmartContractResult, error)
 	GetTransactionsPool(fields string) (*common.TransactionsPoolAPIResponse, error)
 	GetTransactionsPoolForSender(sender, fields string) (*common.TransactionsPoolForSenderApiResponse, error)
 	GetLastPoolNonceForSender(sender string) (uint64, error)
@@ -100,6 +108,17 @@ func NewTransactionGroup(facade transactionFacadeHandler) (*transactionGroup, er
 			},
 		},
 		{
+			Path:    simulateSCRCostPath,
+			Method:  http.MethodPost,
+			Handler: tg.simulateSCR,
+			AdditionalMiddlewares: []shared.AdditionalMiddleware{
+				{
+					Middleware: middleware.CreateEndpointThrottlerFromFacade(simulateSCRCostEndpoint, facade),
+					Position:   shared.Before,
+				},
+			},
+		},
+		{
 			Path:    costPath,
 			Method:  http.MethodPost,
 			Handler: tg.computeTransactionGasLimit,
@@ -137,6 +156,17 @@ func NewTransactionGroup(facade transactionFacadeHandler) (*transactionGroup, er
 				},
 			},
 		},
+		{
+			Path:    getScrsByTxHashPath,
+			Method:  http.MethodGet,
+			Handler: tg.getScrsByTxHash,
+			AdditionalMiddlewares: []shared.AdditionalMiddleware{
+				{
+					Middleware: middleware.CreateEndpointThrottlerFromFacade(getScrsByTxHashEndpoint, facade),
+					Position:   shared.Before,
+				},
+			},
+		},
 	}
 	tg.endpoints = endpoints
 
@@ -151,6 +181,46 @@ type TxResponse struct {
 	BlockNumber uint64 `json:"blockNumber"`
 	BlockHash   string `json:"blockHash"`
 	Timestamp   uint64 `json:"timestamp"`
+}
+
+func (tg *transactionGroup) simulateSCR(c *gin.Context) {
+	var scr = smartContractResult.SmartContractResult{}
+	err := c.ShouldBindJSON(&scr)
+	if err != nil {
+		c.JSON(
+			http.StatusBadRequest,
+			shared.GenericAPIResponse{
+				Data:  nil,
+				Error: fmt.Sprintf("%s: %s", errors.ErrValidation.Error(), err.Error()),
+				Code:  shared.ReturnCodeRequestError,
+			},
+		)
+		return
+	}
+
+	start := time.Now()
+	executionResults, err := tg.getFacade().SimulateSCRExecutionCost(&scr)
+	logging.LogAPIActionDurationIfNeeded(start, "API call: SimulateSCRExecution")
+	if err != nil {
+		c.JSON(
+			http.StatusInternalServerError,
+			shared.GenericAPIResponse{
+				Data:  nil,
+				Error: err.Error(),
+				Code:  shared.ReturnCodeInternalError,
+			},
+		)
+		return
+	}
+
+	c.JSON(
+		http.StatusOK,
+		shared.GenericAPIResponse{
+			Data:  executionResults,
+			Error: "",
+			Code:  shared.ReturnCodeSuccess,
+		},
+	)
 }
 
 // simulateTransaction will receive a transaction from the client and will simulate its execution and return the results
@@ -182,27 +252,7 @@ func (tg *transactionGroup) simulateTransaction(c *gin.Context) {
 		return
 	}
 
-	txArgs := &external.ArgsCreateTransaction{
-		Nonce:            ftx.Nonce,
-		Value:            ftx.Value,
-		Receiver:         ftx.Receiver,
-		ReceiverUsername: ftx.ReceiverUsername,
-		Sender:           ftx.Sender,
-		SenderUsername:   ftx.SenderUsername,
-		GasPrice:         ftx.GasPrice,
-		GasLimit:         ftx.GasLimit,
-		DataField:        ftx.Data,
-		SignatureHex:     ftx.Signature,
-		ChainID:          ftx.ChainID,
-		Version:          ftx.Version,
-		Options:          ftx.Options,
-		Guardian:         ftx.GuardianAddr,
-		GuardianSigHex:   ftx.GuardianSignature,
-	}
-	start := time.Now()
-	tx, txHash, err := tg.getFacade().CreateTransaction(txArgs)
-	logging.LogAPIActionDurationIfNeeded(start, "API call: CreateTransaction")
-
+	tx, txHash, err := tg.createTransaction(&ftx)
 	if err != nil {
 		c.JSON(
 			http.StatusBadRequest,
@@ -215,7 +265,7 @@ func (tg *transactionGroup) simulateTransaction(c *gin.Context) {
 		return
 	}
 
-	start = time.Now()
+	start := time.Now()
 	err = tg.getFacade().ValidateTransactionForSimulation(tx, checkSignature)
 	logging.LogAPIActionDurationIfNeeded(start, "API call: ValidateTransactionForSimulation")
 	if err != nil {
@@ -272,26 +322,7 @@ func (tg *transactionGroup) sendTransaction(c *gin.Context) {
 		return
 	}
 
-	txArgs := &external.ArgsCreateTransaction{
-		Nonce:            ftx.Nonce,
-		Value:            ftx.Value,
-		Receiver:         ftx.Receiver,
-		ReceiverUsername: ftx.ReceiverUsername,
-		Sender:           ftx.Sender,
-		SenderUsername:   ftx.SenderUsername,
-		GasPrice:         ftx.GasPrice,
-		GasLimit:         ftx.GasLimit,
-		DataField:        ftx.Data,
-		SignatureHex:     ftx.Signature,
-		ChainID:          ftx.ChainID,
-		Version:          ftx.Version,
-		Options:          ftx.Options,
-		Guardian:         ftx.GuardianAddr,
-		GuardianSigHex:   ftx.GuardianSignature,
-	}
-	start := time.Now()
-	tx, txHash, err := tg.getFacade().CreateTransaction(txArgs)
-	logging.LogAPIActionDurationIfNeeded(start, "API call: CreateTransaction")
+	tx, txHash, err := tg.createTransaction(&ftx)
 	if err != nil {
 		c.JSON(
 			http.StatusBadRequest,
@@ -304,7 +335,7 @@ func (tg *transactionGroup) sendTransaction(c *gin.Context) {
 		return
 	}
 
-	start = time.Now()
+	start := time.Now()
 	err = tg.getFacade().ValidateTransaction(tx)
 	logging.LogAPIActionDurationIfNeeded(start, "API call: ValidateTransaction")
 	if err != nil {
@@ -370,25 +401,7 @@ func (tg *transactionGroup) sendMultipleTransactions(c *gin.Context) {
 	var start time.Time
 	txsHashes := make(map[int]string)
 	for idx, receivedTx := range ftxs {
-		txArgs := &external.ArgsCreateTransaction{
-			Nonce:            receivedTx.Nonce,
-			Value:            receivedTx.Value,
-			Receiver:         receivedTx.Receiver,
-			ReceiverUsername: receivedTx.ReceiverUsername,
-			Sender:           receivedTx.Sender,
-			SenderUsername:   receivedTx.SenderUsername,
-			GasPrice:         receivedTx.GasPrice,
-			GasLimit:         receivedTx.GasLimit,
-			DataField:        receivedTx.Data,
-			SignatureHex:     receivedTx.Signature,
-			ChainID:          receivedTx.ChainID,
-			Version:          receivedTx.Version,
-			Options:          receivedTx.Options,
-			Guardian:         receivedTx.GuardianAddr,
-			GuardianSigHex:   receivedTx.GuardianSignature,
-		}
-		tx, txHash, err = tg.getFacade().CreateTransaction(txArgs)
-		logging.LogAPIActionDurationIfNeeded(start, "API call: CreateTransaction")
+		tx, txHash, err = tg.createTransaction(&receivedTx)
 		if err != nil {
 			continue
 		}
@@ -424,6 +437,57 @@ func (tg *transactionGroup) sendMultipleTransactions(c *gin.Context) {
 				"txsSent":   numOfSentTxs,
 				"txsHashes": txsHashes,
 			},
+			Error: "",
+			Code:  shared.ReturnCodeSuccess,
+		},
+	)
+}
+
+func (tg *transactionGroup) getScrsByTxHash(c *gin.Context) {
+	txhash := c.Param("txhash")
+	if txhash == "" {
+		c.JSON(
+			http.StatusBadRequest,
+			shared.GenericAPIResponse{
+				Data:  nil,
+				Error: fmt.Sprintf("%s: %s", errors.ErrValidation.Error(), errors.ErrValidationEmptyTxHash.Error()),
+				Code:  shared.ReturnCodeRequestError,
+			},
+		)
+		return
+	}
+	scrHashStr := c.Request.URL.Query().Get(queryParameterScrHash)
+	if scrHashStr == "" {
+		c.JSON(
+			http.StatusBadRequest,
+			shared.GenericAPIResponse{
+				Data:  nil,
+				Error: fmt.Sprintf("%s: %s", errors.ErrValidation.Error(), errors.ErrValidationEmptySCRHash.Error()),
+				Code:  shared.ReturnCodeRequestError,
+			},
+		)
+		return
+	}
+
+	start := time.Now()
+	scrs, err := tg.getFacade().GetSCRsByTxHash(txhash, scrHashStr)
+	if err != nil {
+		c.JSON(
+			http.StatusInternalServerError,
+			shared.GenericAPIResponse{
+				Data:  nil,
+				Error: fmt.Sprintf("%s: %s", errors.ErrGetSmartContractResults.Error(), err.Error()),
+				Code:  shared.ReturnCodeInternalError,
+			},
+		)
+		return
+	}
+	logging.LogAPIActionDurationIfNeeded(start, "API call: GetSCRsByTxHash")
+
+	c.JSON(
+		http.StatusOK,
+		shared.GenericAPIResponse{
+			Data:  gin.H{"scrs": scrs},
 			Error: "",
 			Code:  shared.ReturnCodeSuccess,
 		},
@@ -499,26 +563,7 @@ func (tg *transactionGroup) computeTransactionGasLimit(c *gin.Context) {
 		return
 	}
 
-	txArgs := &external.ArgsCreateTransaction{
-		Nonce:            ftx.Nonce,
-		Value:            ftx.Value,
-		Receiver:         ftx.Receiver,
-		ReceiverUsername: ftx.ReceiverUsername,
-		Sender:           ftx.Sender,
-		SenderUsername:   ftx.SenderUsername,
-		GasPrice:         ftx.GasPrice,
-		GasLimit:         ftx.GasLimit,
-		DataField:        ftx.Data,
-		SignatureHex:     ftx.Signature,
-		ChainID:          ftx.ChainID,
-		Version:          ftx.Version,
-		Options:          ftx.Options,
-		Guardian:         ftx.GuardianAddr,
-		GuardianSigHex:   ftx.GuardianSignature,
-	}
-	start := time.Now()
-	tx, _, err := tg.getFacade().CreateTransaction(txArgs)
-	logging.LogAPIActionDurationIfNeeded(start, "API call: CreateTransaction")
+	tx, _, err := tg.createTransaction(&ftx)
 	if err != nil {
 		c.JSON(
 			http.StatusInternalServerError,
@@ -531,7 +576,7 @@ func (tg *transactionGroup) computeTransactionGasLimit(c *gin.Context) {
 		return
 	}
 
-	start = time.Now()
+	start := time.Now()
 	cost, err := tg.getFacade().ComputeTransactionGasLimit(tx)
 	logging.LogAPIActionDurationIfNeeded(start, "API call: ComputeTransactionGasLimit")
 	if err != nil {
@@ -728,6 +773,33 @@ func (tg *transactionGroup) getTransactionsPoolNonceGapsForSender(sender string,
 	)
 }
 
+func (tg *transactionGroup) createTransaction(receivedTx *transaction.FrontendTransaction) (*transaction.Transaction, []byte, error) {
+	txArgs := &external.ArgsCreateTransaction{
+		Nonce:               receivedTx.Nonce,
+		Value:               receivedTx.Value,
+		Receiver:            receivedTx.Receiver,
+		ReceiverUsername:    receivedTx.ReceiverUsername,
+		Sender:              receivedTx.Sender,
+		SenderUsername:      receivedTx.SenderUsername,
+		GasPrice:            receivedTx.GasPrice,
+		GasLimit:            receivedTx.GasLimit,
+		DataField:           receivedTx.Data,
+		SignatureHex:        receivedTx.Signature,
+		ChainID:             receivedTx.ChainID,
+		Version:             receivedTx.Version,
+		Options:             receivedTx.Options,
+		Guardian:            receivedTx.GuardianAddr,
+		GuardianSigHex:      receivedTx.GuardianSignature,
+		Relayer:             receivedTx.RelayerAddr,
+		RelayerSignatureHex: receivedTx.RelayerSignature,
+	}
+	start := time.Now()
+	tx, txHash, err := tg.getFacade().CreateTransaction(txArgs)
+	logging.LogAPIActionDurationIfNeeded(start, "API call: CreateTransaction")
+
+	return tx, txHash, err
+}
+
 func validateQuery(sender, fields string, lastNonce, nonceGaps bool) error {
 	if fields != "" && lastNonce {
 		return errors.ErrFetchingLatestNonceCannotIncludeFields
@@ -743,6 +815,10 @@ func validateQuery(sender, fields string, lastNonce, nonceGaps bool) error {
 
 	if sender == "" && nonceGaps {
 		return errors.ErrEmptySenderToGetNonceGaps
+	}
+
+	if fields == "*" {
+		return nil
 	}
 
 	if fields != "" {

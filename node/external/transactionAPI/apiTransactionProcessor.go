@@ -2,12 +2,14 @@ package transactionAPI
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/multiversx/mx-chain-core-go/core"
+	"github.com/multiversx/mx-chain-core-go/data"
 	"github.com/multiversx/mx-chain-core-go/data/block"
 	rewardTxData "github.com/multiversx/mx-chain-core-go/data/rewardTx"
 	"github.com/multiversx/mx-chain-core-go/data/smartContractResult"
@@ -18,6 +20,7 @@ import (
 	"github.com/multiversx/mx-chain-go/dataRetriever"
 	"github.com/multiversx/mx-chain-go/dblookupext"
 	"github.com/multiversx/mx-chain-go/process"
+	"github.com/multiversx/mx-chain-go/process/smartContract"
 	"github.com/multiversx/mx-chain-go/process/txstatus"
 	"github.com/multiversx/mx-chain-go/sharding"
 	"github.com/multiversx/mx-chain-go/storage/txcache"
@@ -42,6 +45,7 @@ type apiTransactionProcessor struct {
 	transactionResultsProcessor *apiTransactionResultsProcessor
 	refundDetector              *refundDetector
 	gasUsedAndFeeProcessor      *gasUsedAndFeeProcessor
+	enableEpochsHandler         common.EnableEpochsHandler
 }
 
 // NewAPITransactionProcessor will create a new instance of apiTransactionProcessor
@@ -51,7 +55,13 @@ func NewAPITransactionProcessor(args *ArgAPITransactionProcessor) (*apiTransacti
 		return nil, err
 	}
 
-	txUnmarshalerAndPreparer := newTransactionUnmarshaller(args.Marshalizer, args.AddressPubKeyConverter, args.DataFieldParser, args.ShardCoordinator)
+	txUnmarshalerAndPreparer := newTransactionUnmarshaller(
+		args.Marshalizer,
+		args.AddressPubKeyConverter,
+		args.DataFieldParser,
+		args.ShardCoordinator,
+		args.EnableEpochsHandler,
+	)
 	txResultsProc := newAPITransactionResultProcessor(
 		args.AddressPubKeyConverter,
 		args.HistoryRepository,
@@ -64,7 +74,13 @@ func NewAPITransactionProcessor(args *ArgAPITransactionProcessor) (*apiTransacti
 	)
 
 	refundDetectorInstance := NewRefundDetector()
-	gasUsedAndFeeProc := newGasUsedAndFeeProcessor(args.FeeComputer, args.AddressPubKeyConverter)
+	gasUsedAndFeeProc := newGasUsedAndFeeProcessor(
+		args.FeeComputer,
+		args.AddressPubKeyConverter,
+		smartContract.NewArgumentParser(),
+		args.TxMarshaller,
+		args.EnableEpochsHandler,
+	)
 
 	return &apiTransactionProcessor{
 		roundDuration:               args.RoundDuration,
@@ -82,7 +98,51 @@ func NewAPITransactionProcessor(args *ArgAPITransactionProcessor) (*apiTransacti
 		transactionResultsProcessor: txResultsProc,
 		refundDetector:              refundDetectorInstance,
 		gasUsedAndFeeProcessor:      gasUsedAndFeeProc,
+		enableEpochsHandler:         args.EnableEpochsHandler,
 	}, nil
+}
+
+// GetSCRsByTxHash will return a list of smart contract results based on a provided tx hash and smart contract result hash
+func (atp *apiTransactionProcessor) GetSCRsByTxHash(txHash string, scrHash string) ([]*transaction.ApiSmartContractResult, error) {
+	decodedScrHash, err := hex.DecodeString(scrHash)
+	if err != nil {
+		return nil, err
+	}
+
+	decodedTxHash, err := hex.DecodeString(txHash)
+	if err != nil {
+		return nil, err
+	}
+
+	if !atp.historyRepository.IsEnabled() {
+		return nil, fmt.Errorf("cannot return smat contract results: %w", ErrDBLookExtensionIsNotEnabled)
+	}
+
+	miniblockMetadata, err := atp.historyRepository.GetMiniblockMetadataByTxHash(decodedScrHash)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", ErrTransactionNotFound.Error(), err)
+	}
+
+	resultsHashes, err := atp.historyRepository.GetResultsHashesByTxHash(decodedTxHash, miniblockMetadata.Epoch)
+	if err != nil {
+		// It's perfectly normal to have transactions without SCRs.
+		if errors.Is(err, dblookupext.ErrNotFoundInStorage) {
+			return []*transaction.ApiSmartContractResult{}, nil
+		}
+		return nil, err
+	}
+
+	scrsAPI := make([]*transaction.ApiSmartContractResult, 0, len(resultsHashes.ScResultsHashesAndEpoch))
+	for _, scrHashesEpoch := range resultsHashes.ScResultsHashesAndEpoch {
+		scrs, errGet := atp.transactionResultsProcessor.getSmartContractResultsInTransactionByHashesAndEpoch(scrHashesEpoch.ScResultsHashes, scrHashesEpoch.Epoch)
+		if errGet != nil {
+			return nil, errGet
+		}
+
+		scrsAPI = append(scrsAPI, scrs...)
+	}
+
+	return scrsAPI, nil
 }
 
 // GetTransaction gets the transaction based on the given hash. It will search in the cache and the storage and
@@ -129,7 +189,7 @@ func (atp *apiTransactionProcessor) PopulateComputedFields(tx *transaction.ApiTr
 }
 
 func (atp *apiTransactionProcessor) populateComputedFieldsProcessingType(tx *transaction.ApiTransactionResult) {
-	typeOnSource, typeOnDestination := atp.txTypeHandler.ComputeTransactionType(tx.Tx)
+	typeOnSource, typeOnDestination, _ := atp.txTypeHandler.ComputeTransactionTypeInEpoch(tx.Tx, tx.Epoch)
 	tx.ProcessingTypeOnSource = typeOnSource.String()
 	tx.ProcessingTypeOnDestination = typeOnDestination.String()
 }
@@ -143,6 +203,13 @@ func (atp *apiTransactionProcessor) populateComputedFieldInitiallyPaidFee(tx *tr
 	fee := atp.feeComputer.ComputeTransactionFee(tx)
 	// For user-initiated transactions, we can assume the fee is always strictly positive (note: BigInt(0) is stringified as "").
 	tx.InitiallyPaidFee = fee.String()
+
+	isFeeFixActive := atp.enableEpochsHandler.IsFlagEnabledInEpoch(common.FixRelayedBaseCostFlag, tx.Epoch)
+	_, fee, isRelayedV1V2 := atp.gasUsedAndFeeProcessor.getFeeOfRelayedV1V2(tx)
+	isRelayedAfterFix := tx.IsRelayed && isFeeFixActive && isRelayedV1V2
+	if isRelayedAfterFix {
+		tx.InitiallyPaidFee = fee.String()
+	}
 }
 
 func (atp *apiTransactionProcessor) populateComputedFieldIsRefund(tx *transaction.ApiTransactionResult) {
@@ -308,41 +375,53 @@ func (atp *apiTransactionProcessor) getUnsignedTransactionsFromPool(requestedFie
 }
 
 func (atp *apiTransactionProcessor) extractRequestedTxInfo(wrappedTx *txcache.WrappedTransaction, requestedFieldsHandler fieldsHandler) common.Transaction {
+	fieldGetters := atp.getFieldGettersForTx(wrappedTx)
 	tx := common.Transaction{
 		TxFields: make(map[string]interface{}),
 	}
 
-	tx.TxFields[hashField] = hex.EncodeToString(wrappedTx.TxHash)
-
-	if requestedFieldsHandler.HasNonce {
-		tx.TxFields[nonceField] = wrappedTx.Tx.GetNonce()
-	}
-
-	if requestedFieldsHandler.HasSender {
-		tx.TxFields[senderField], _ = atp.addressPubKeyConverter.Encode(wrappedTx.Tx.GetSndAddr())
-	}
-
-	if requestedFieldsHandler.HasReceiver {
-		tx.TxFields[receiverField], _ = atp.addressPubKeyConverter.Encode(wrappedTx.Tx.GetRcvAddr())
-	}
-
-	if requestedFieldsHandler.HasGasLimit {
-		tx.TxFields[gasLimitField] = wrappedTx.Tx.GetGasLimit()
-	}
-	if requestedFieldsHandler.HasGasPrice {
-		tx.TxFields[gasPriceField] = wrappedTx.Tx.GetGasPrice()
-	}
-	if requestedFieldsHandler.HasRcvUsername {
-		tx.TxFields[rcvUsernameField] = wrappedTx.Tx.GetRcvUserName()
-	}
-	if requestedFieldsHandler.HasData {
-		tx.TxFields[dataField] = wrappedTx.Tx.GetData()
-	}
-	if requestedFieldsHandler.HasValue {
-		tx.TxFields[valueField] = getTxValue(wrappedTx)
+	for field, value := range fieldGetters {
+		if requestedFieldsHandler.IsFieldSet(field) {
+			tx.TxFields[field] = value
+		}
 	}
 
 	return tx
+}
+
+func (atp *apiTransactionProcessor) getFieldGettersForTx(wrappedTx *txcache.WrappedTransaction) map[string]interface{} {
+	var fieldGetters = map[string]interface{}{
+		hashField:        hex.EncodeToString(wrappedTx.TxHash),
+		nonceField:       wrappedTx.Tx.GetNonce(),
+		senderField:      atp.addressPubKeyConverter.SilentEncode(wrappedTx.Tx.GetSndAddr(), log),
+		receiverField:    atp.addressPubKeyConverter.SilentEncode(wrappedTx.Tx.GetRcvAddr(), log),
+		gasLimitField:    wrappedTx.Tx.GetGasLimit(),
+		gasPriceField:    wrappedTx.Tx.GetGasPrice(),
+		rcvUsernameField: wrappedTx.Tx.GetRcvUserName(),
+		dataField:        wrappedTx.Tx.GetData(),
+		valueField:       getTxValue(wrappedTx),
+		senderShardID:    atp.shardCoordinator.ComputeId(wrappedTx.Tx.GetSndAddr()),
+		receiverShardID:  atp.shardCoordinator.ComputeId(wrappedTx.Tx.GetRcvAddr()),
+	}
+
+	guardedTx, isGuardedTx := wrappedTx.Tx.(data.GuardedTransactionHandler)
+	if isGuardedTx && len(guardedTx.GetGuardianAddr()) > 0 {
+		fieldGetters[signatureField] = hex.EncodeToString(guardedTx.GetSignature())
+
+		if len(guardedTx.GetGuardianAddr()) > 0 {
+			fieldGetters[guardianField] = atp.addressPubKeyConverter.SilentEncode(guardedTx.GetGuardianAddr(), log)
+			fieldGetters[guardianSignatureField] = hex.EncodeToString(guardedTx.GetGuardianSignature())
+		}
+	}
+
+	relayedTx, ok := wrappedTx.Tx.(data.RelayedTransactionHandler)
+	if ok && len(relayedTx.GetRelayerAddr()) > 0 {
+		fieldGetters[signatureField] = hex.EncodeToString(relayedTx.GetSignature())
+		fieldGetters[relayerField] = atp.addressPubKeyConverter.SilentEncode(relayedTx.GetRelayerAddr(), log)
+		fieldGetters[relayerSignatureField] = hex.EncodeToString(relayedTx.GetRelayerSignature())
+	}
+
+	return fieldGetters
 }
 
 func (atp *apiTransactionProcessor) fetchTxsForSender(sender string, senderShard uint32) []*txcache.WrappedTransaction {
@@ -450,6 +529,17 @@ func (atp *apiTransactionProcessor) computeTimestampForRound(round uint64) int64
 	return timestamp.Unix()
 }
 
+func (atp *apiTransactionProcessor) computeTimestampForRoundAsMs(round uint64) int64 {
+	if round == 0 {
+		return 0
+	}
+
+	secondsSinceGenesis := round * atp.roundDuration
+	timestamp := atp.genesisTime.Add(time.Duration(secondsSinceGenesis) * time.Millisecond)
+
+	return timestamp.UnixMilli()
+}
+
 func (atp *apiTransactionProcessor) lookupHistoricalTransaction(hash []byte, withResults bool) (*transaction.ApiTransactionResult, error) {
 	miniblockMetadata, err := atp.historyRepository.GetMiniblockMetadataByTxHash(hash)
 	if err != nil {
@@ -469,7 +559,7 @@ func (atp *apiTransactionProcessor) lookupHistoricalTransaction(hash []byte, wit
 		txType = transaction.TxTypeInvalid
 	}
 
-	tx, err := atp.txUnmarshaller.unmarshalTransaction(txBytes, txType)
+	tx, err := atp.txUnmarshaller.unmarshalTransaction(txBytes, txType, miniblockMetadata.Epoch)
 	if err != nil {
 		log.Warn("lookupHistoricalTransaction(): unexpected condition, cannot unmarshal transaction")
 		return nil, fmt.Errorf("%s: %w", ErrCannotRetrieveTransaction.Error(), err)
@@ -477,6 +567,7 @@ func (atp *apiTransactionProcessor) lookupHistoricalTransaction(hash []byte, wit
 
 	putMiniblockFieldsInTransaction(tx, miniblockMetadata)
 	tx.Timestamp = atp.computeTimestampForRound(tx.Round)
+	tx.TimestampMs = atp.computeTimestampForRoundAsMs(tx.Round)
 	statusComputer, err := txstatus.NewStatusComputer(atp.shardCoordinator.SelfId(), atp.uint64ByteSliceConverter, atp.storageService)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ErrNilStatusComputer.Error(), err)
@@ -528,12 +619,18 @@ func (atp *apiTransactionProcessor) getTransactionFromStorage(hash []byte) (*tra
 		return nil, ErrTransactionNotFound
 	}
 
-	tx, err := atp.txUnmarshaller.unmarshalTransaction(txBytes, txType)
+	// will use the current epoch here as it is unknown at this point
+	// considering that this epoch will be used for relayed v1/v2, this may lead
+	// to inconsistent responses for relayed v1/v2 that will be returned from storage
+	// that were executed before deactivation and the request is made after
+	currentEpoch := atp.enableEpochsHandler.GetCurrentEpoch()
+	tx, err := atp.txUnmarshaller.unmarshalTransaction(txBytes, txType, currentEpoch)
 	if err != nil {
 		return nil, err
 	}
 
 	tx.Timestamp = atp.computeTimestampForRound(tx.Round)
+	tx.TimestampMs = atp.computeTimestampForRoundAsMs(tx.Round)
 
 	// TODO: take care of this when integrating the adaptivity
 	statusComputer, err := txstatus.NewStatusComputer(atp.shardCoordinator.SelfId(), atp.uint64ByteSliceConverter, atp.storageService)
@@ -686,8 +783,8 @@ func getTxValue(wrappedTx *txcache.WrappedTransaction) string {
 }
 
 // UnmarshalTransaction will try to unmarshal the transaction bytes based on the transaction type
-func (atp *apiTransactionProcessor) UnmarshalTransaction(txBytes []byte, txType transaction.TxType) (*transaction.ApiTransactionResult, error) {
-	tx, err := atp.txUnmarshaller.unmarshalTransaction(txBytes, txType)
+func (atp *apiTransactionProcessor) UnmarshalTransaction(txBytes []byte, txType transaction.TxType, epoch uint32) (*transaction.ApiTransactionResult, error) {
+	tx, err := atp.txUnmarshaller.unmarshalTransaction(txBytes, txType, epoch)
 	if err != nil {
 		return nil, err
 	}

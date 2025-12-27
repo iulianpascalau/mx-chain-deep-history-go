@@ -10,6 +10,7 @@ import (
 	"github.com/multiversx/mx-chain-go/factory"
 	factoryState "github.com/multiversx/mx-chain-go/factory/state"
 	"github.com/multiversx/mx-chain-go/state"
+	"github.com/multiversx/mx-chain-go/state/disabled"
 )
 
 // ArgsStateComponents will hold the components needed for state components
@@ -29,6 +30,7 @@ type stateComponentsHolder struct {
 	triesContainer           common.TriesHolder
 	triesStorageManager      map[string]common.StorageManager
 	missingTrieNodesNotifier common.MissingTrieNodesNotifier
+	trieLeavesRetriever      common.TrieLeavesRetriever
 	stateComponentsCloser    io.Closer
 }
 
@@ -70,6 +72,7 @@ func CreateStateComponents(args ArgsStateComponents) (*stateComponentsHolder, er
 		triesContainer:           stateComp.TriesContainer(),
 		triesStorageManager:      stateComp.TrieStorageManagers(),
 		missingTrieNodesNotifier: stateComp.MissingTrieNodesNotifier(),
+		trieLeavesRetriever:      stateComp.TrieLeavesRetriever(),
 		stateComponentsCloser:    stateComp,
 	}, nil
 }
@@ -107,6 +110,15 @@ func (s *stateComponentsHolder) TrieStorageManagers() map[string]common.StorageM
 // MissingTrieNodesNotifier will return missing trie nodes notifier
 func (s *stateComponentsHolder) MissingTrieNodesNotifier() common.MissingTrieNodesNotifier {
 	return s.missingTrieNodesNotifier
+}
+
+// TrieLeavesRetriever will return the trie leaves retriever
+func (s *stateComponentsHolder) TrieLeavesRetriever() common.TrieLeavesRetriever {
+	return s.trieLeavesRetriever
+}
+
+func (s *stateComponentsHolder) StateAccessesCollector() state.StateAccessesCollector {
+	return disabled.NewDisabledStateAccessesCollector()
 }
 
 // Close will close the state components

@@ -2,6 +2,7 @@ package fee
 
 import (
 	"encoding/hex"
+	"github.com/multiversx/mx-chain-go/config"
 	"math/big"
 	"sync"
 	"testing"
@@ -20,8 +21,13 @@ import (
 
 func createEconomicsData() process.EconomicsDataHandler {
 	economicsConfig := testscommon.GetEconomicsConfig()
+	cfg := &config.Config{EpochStartConfig: config.EpochStartConfig{RoundsPerEpoch: 14400}}
+	cfg.GeneralSettings.ChainParametersByEpoch = []config.ChainParametersByEpochConfig{{RoundDuration: 6000}}
 	economicsData, _ := economics.NewEconomicsData(economics.ArgsNewEconomicsData{
-		Economics: &economicsConfig,
+		TxVersionChecker: &testscommon.TxVersionCheckerStub{},
+		Economics:        &economicsConfig,
+		GeneralConfig:    cfg,
+		EpochNotifier:    &epochNotifier.EpochNotifierStub{},
 		EnableEpochsHandler: &enableEpochsHandlerMock.EnableEpochsHandlerStub{
 			IsFlagEnabledInEpochCalled: func(flag core.EnableEpochFlag, epoch uint32) bool {
 				if flag == common.PenalizedTooMuchGasFlag {
@@ -33,8 +39,8 @@ func createEconomicsData() process.EconomicsDataHandler {
 				return false
 			},
 		},
-		TxVersionChecker: &testscommon.TxVersionCheckerStub{},
-		EpochNotifier:    &epochNotifier.EpochNotifierStub{},
+		PubkeyConverter:  &testscommon.PubkeyConverterStub{},
+		ShardCoordinator: &testscommon.ShardsCoordinatorMock{},
 	})
 
 	return economicsData

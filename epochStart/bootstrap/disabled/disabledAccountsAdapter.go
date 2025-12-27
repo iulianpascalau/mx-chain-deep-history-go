@@ -86,12 +86,7 @@ func (a *accountsAdapter) RootHash() ([]byte, error) {
 }
 
 // RecreateTrie -
-func (a *accountsAdapter) RecreateTrie(_ []byte) error {
-	return nil
-}
-
-// RecreateTrieFromEpoch -
-func (a *accountsAdapter) RecreateTrieFromEpoch(_ common.RootHashHolder) error {
+func (a *accountsAdapter) RecreateTrie(_ common.RootHashHolder) error {
 	return nil
 }
 
@@ -131,6 +126,10 @@ func (a *accountsAdapter) CommitInEpoch(_ uint32, _ uint32) ([]byte, error) {
 // GetStackDebugFirstEntry -
 func (a *accountsAdapter) GetStackDebugFirstEntry() []byte {
 	return nil
+}
+
+// SetTxHashForLatestStateAccesses -
+func (a *accountsAdapter) SetTxHashForLatestStateAccesses(_ []byte) {
 }
 
 // Close -

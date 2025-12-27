@@ -17,20 +17,22 @@ import (
 	"github.com/multiversx/mx-chain-core-go/hashing"
 	"github.com/multiversx/mx-chain-core-go/hashing/keccak"
 	"github.com/multiversx/mx-chain-core-go/marshal"
+	vmcommon "github.com/multiversx/mx-chain-vm-common-go"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/multiversx/mx-chain-go/common"
 	"github.com/multiversx/mx-chain-go/common/errChan"
 	"github.com/multiversx/mx-chain-go/common/holders"
 	errorsCommon "github.com/multiversx/mx-chain-go/errors"
 	"github.com/multiversx/mx-chain-go/state/parsers"
+	"github.com/multiversx/mx-chain-go/testscommon"
 	"github.com/multiversx/mx-chain-go/testscommon/enableEpochsHandlerMock"
 	"github.com/multiversx/mx-chain-go/testscommon/storageManager"
 	trieMock "github.com/multiversx/mx-chain-go/testscommon/trie"
 	"github.com/multiversx/mx-chain-go/trie"
 	"github.com/multiversx/mx-chain-go/trie/keyBuilder"
 	"github.com/multiversx/mx-chain-go/trie/mock"
-	vmcommon "github.com/multiversx/mx-chain-vm-common-go"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 var emptyTrieHash = make([]byte, 32)
@@ -389,27 +391,12 @@ func TestPatriciaMerkleTree_DeleteNotPresent(t *testing.T) {
 func TestPatriciaMerkleTrie_Recreate(t *testing.T) {
 	t.Parallel()
 
-	tr := initTrie()
-	rootHash, _ := tr.RootHash()
-	_ = tr.Commit()
-
-	newTr, err := tr.Recreate(rootHash)
-	assert.Nil(t, err)
-	assert.NotNil(t, newTr)
-
-	root, _ := newTr.RootHash()
-	assert.Equal(t, rootHash, root)
-}
-
-func TestPatriciaMerkleTrie_RecreateFromEpoch(t *testing.T) {
-	t.Parallel()
-
 	t.Run("nil options", func(t *testing.T) {
 		t.Parallel()
 
 		tr := initTrie()
 
-		newTr, err := tr.RecreateFromEpoch(nil)
+		newTr, err := tr.Recreate(nil)
 		assert.Nil(t, newTr)
 		assert.Equal(t, trie.ErrNilRootHashHolder, err)
 	})
@@ -421,8 +408,8 @@ func TestPatriciaMerkleTrie_RecreateFromEpoch(t *testing.T) {
 		rootHash, _ := tr.RootHash()
 		_ = tr.Commit()
 
-		rootHashHolder := holders.NewRootHashHolder(rootHash, core.OptionalUint32{})
-		newTr, err := tr.RecreateFromEpoch(rootHashHolder)
+		rootHashHolder := holders.NewDefaultRootHashesHolder(rootHash)
+		newTr, err := tr.Recreate(rootHashHolder)
 		assert.Nil(t, err)
 
 		assert.True(t, trie.IsBaseTrieStorageManager(newTr.GetStorageManager()))
@@ -440,7 +427,7 @@ func TestPatriciaMerkleTrie_RecreateFromEpoch(t *testing.T) {
 			HasValue: true,
 		}
 		rootHashHolder := holders.NewRootHashHolder(rootHash, optionalUint32)
-		newTr, err := tr.RecreateFromEpoch(rootHashHolder)
+		newTr, err := tr.Recreate(rootHashHolder)
 		assert.Nil(t, err)
 
 		assert.True(t, trie.IsTrieStorageManagerInEpoch(newTr.GetStorageManager()))
@@ -452,7 +439,7 @@ func TestPatriciaMerkleTrie_RecreateWithInvalidRootHash(t *testing.T) {
 
 	tr := initTrie()
 
-	newTr, err := tr.Recreate(nil)
+	newTr, err := tr.Recreate(holders.NewDefaultRootHashesHolder([]byte{}))
 	assert.Nil(t, err)
 	root, _ := newTr.RootHash()
 	assert.Equal(t, emptyTrieHash, root)
@@ -640,7 +627,7 @@ func TestPatriciaMerkleTrie_GetAllLeavesOnChannel(t *testing.T) {
 		keyBuilderStub.GetKeyCalled = func() ([]byte, error) {
 			return nil, expectedErr
 		}
-		keyBuilderStub.CloneCalled = func() common.KeyBuilder {
+		keyBuilderStub.ShallowCloneCalled = func() common.KeyBuilder {
 			return keyBuilderStub
 		}
 
@@ -682,7 +669,7 @@ func TestPatriciaMerkleTrie_GetAllLeavesOnChannel(t *testing.T) {
 			}
 			return nil, expectedErr
 		}
-		keyBuilderStub.CloneCalled = func() common.KeyBuilder {
+		keyBuilderStub.ShallowCloneCalled = func() common.KeyBuilder {
 			return keyBuilderStub
 		}
 
@@ -967,7 +954,7 @@ func TestPatriciaMerkleTrie_ConcurrentOperations(t *testing.T) {
 	numOperations := 1000
 	wg := sync.WaitGroup{}
 	wg.Add(numOperations)
-	numFunctions := 19
+	numFunctions := 18
 
 	initialRootHash, _ := tr.RootHash()
 
@@ -993,31 +980,28 @@ func TestPatriciaMerkleTrie_ConcurrentOperations(t *testing.T) {
 				err := tr.Commit()
 				assert.Nil(t, err)
 			case 5:
-				_, err := tr.Recreate(initialRootHash)
-				assert.Nil(t, err)
-			case 6:
 				epoch := core.OptionalUint32{
 					Value:    3,
 					HasValue: true,
 				}
 				rootHashHolder := holders.NewRootHashHolder(initialRootHash, epoch)
-				_, err := tr.RecreateFromEpoch(rootHashHolder)
+				_, err := tr.Recreate(rootHashHolder)
 				assert.Nil(t, err)
-			case 7:
+			case 6:
 				_ = tr.String()
-			case 8:
+			case 7:
 				_ = tr.GetObsoleteHashes()
-			case 9:
+			case 8:
 				_, err := tr.GetDirtyHashes()
 				assert.Nil(t, err)
-			case 10:
+			case 9:
 				_, err := tr.GetSerializedNode(initialRootHash)
 				assert.Nil(t, err)
-			case 11:
+			case 10:
 				size1KB := uint64(1024 * 1024)
 				_, _, err := tr.GetSerializedNodes(initialRootHash, size1KB)
 				assert.Nil(t, err)
-			case 12:
+			case 11:
 				trieIteratorChannels := &common.TrieIteratorChannels{
 					LeavesChan: make(chan core.KeyValueHolder, 1000),
 					ErrChan:    errChan.NewErrChanWrapper(),
@@ -1031,20 +1015,20 @@ func TestPatriciaMerkleTrie_ConcurrentOperations(t *testing.T) {
 					parsers.NewMainTrieLeafParser(),
 				)
 				assert.Nil(t, err)
-			case 13:
+			case 12:
 				_, err := tr.GetAllHashes()
 				assert.Nil(t, err)
-			case 14:
+			case 13:
 				_, _, _ = tr.GetProof(initialRootHash) // this might error due to concurrent operations that change the roothash
-			case 15:
+			case 14:
 				// extremely hard to compute an existing hash due to concurrent changes.
 				_, _ = tr.VerifyProof([]byte("dog"), []byte("puppy"), [][]byte{[]byte("proof1")}) // this might error due to concurrent operations that change the roothash
-			case 16:
+			case 15:
 				sm := tr.GetStorageManager()
 				assert.NotNil(t, sm)
-			case 17:
+			case 16:
 				_ = tr.GetOldRoot()
-			case 18:
+			case 17:
 				trieStatsHandler := tr.(common.TrieStats)
 				_, err := trieStatsHandler.GetTrieStats("address", initialRootHash)
 				assert.Nil(t, err)
@@ -1384,7 +1368,7 @@ func TestPatriciaMerkleTrie_CollectLeavesForMigration(t *testing.T) {
 		addDefaultDataToTrie(tr)
 		_ = tr.Commit()
 		rootHash, _ := tr.RootHash()
-		collapsedTrie, _ := tr.Recreate(rootHash)
+		collapsedTrie, _ := tr.Recreate(holders.NewDefaultRootHashesHolder(rootHash))
 		dtr := collapsedTrie.(dataTrie)
 		dtm := &trieMock.DataTrieMigratorStub{
 			ConsumeStorageLoadGasCalled: func() bool {
@@ -1530,6 +1514,39 @@ func TestPatriciaMerkleTrie_IsMigrated(t *testing.T) {
 		assert.True(t, isMigrated)
 		assert.Nil(t, err)
 	})
+}
+
+func TestGetNodeDataFromHash(t *testing.T) {
+	t.Parallel()
+
+	tr := initTrie()
+	_ = tr.Update([]byte("111"), []byte("111"))
+	_ = tr.Update([]byte("aaa"), []byte("aaa"))
+	_ = tr.Commit()
+
+	hashSize := 32
+	keySize := 1
+
+	rootHash, _ := tr.RootHash()
+	nodeData, err := trie.GetNodeDataFromHash(rootHash, keyBuilder.NewKeyBuilder(), tr.GetStorageManager(), &marshal.GogoProtoMarshalizer{}, &testscommon.KeccakMock{})
+	assert.Nil(t, err)
+	assert.Equal(t, 3, len(nodeData))
+
+	firstChildData := nodeData[0]
+	assert.Equal(t, uint(1), firstChildData.GetKeyBuilder().Size())
+	assert.Equal(t, uint64(hashSize+keySize), firstChildData.Size())
+	assert.False(t, firstChildData.IsLeaf())
+
+	seconChildData := nodeData[1]
+	assert.Equal(t, uint(1), seconChildData.GetKeyBuilder().Size())
+	assert.Equal(t, uint64(hashSize+keySize), seconChildData.Size())
+	assert.False(t, seconChildData.IsLeaf())
+
+	thirdChildData := nodeData[2]
+	assert.Equal(t, uint(1), thirdChildData.GetKeyBuilder().Size())
+	assert.Equal(t, uint64(hashSize+keySize), thirdChildData.Size())
+	assert.False(t, thirdChildData.IsLeaf())
+
 }
 
 func BenchmarkPatriciaMerkleTree_Insert(b *testing.B) {
@@ -1723,6 +1740,31 @@ func BenchmarkPatriciaMerkleTrie_RootHashAfterChanging30000NodesInBatchesOf200(b
 				b.StartTimer()
 				_, _ = tr.RootHash()
 			}
+		}
+	}
+}
+
+func BenchmarkPatriciaMerkleTrie_Update(b *testing.B) {
+	tr := emptyTrie()
+	hsh := keccak.NewKeccak()
+
+	nrValuesInTrie := 2000000
+	values := make([][]byte, nrValuesInTrie)
+
+	for i := 0; i < nrValuesInTrie; i++ {
+		key := hsh.Compute(strconv.Itoa(i))
+		value := append(key, []byte(strconv.Itoa(i))...)
+
+		_ = tr.Update(key, value)
+		values[i] = key
+	}
+	_ = tr.Commit()
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < nrValuesInTrie; j++ {
+			_ = tr.Update(values[j], values[j])
 		}
 	}
 }

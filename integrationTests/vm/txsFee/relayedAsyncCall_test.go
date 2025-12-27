@@ -23,7 +23,8 @@ func TestRelayedAsyncCallShouldWork(t *testing.T) {
 
 	t.Run("nonce fix is disabled, should increase the sender's nonce", func(t *testing.T) {
 		testContext := testRelayedAsyncCallShouldWork(t, config.EnableEpochs{
-			RelayedNonceFixEnableEpoch: 100000,
+			RelayedNonceFixEnableEpoch:          100000,
+			RelayedTransactionsV1V2DisableEpoch: integrationTests.UnreachableEpoch,
 		}, senderAddr)
 		defer testContext.Close()
 
@@ -32,7 +33,8 @@ func TestRelayedAsyncCallShouldWork(t *testing.T) {
 	})
 	t.Run("nonce fix is enabled, should still increase the sender's nonce", func(t *testing.T) {
 		testContext := testRelayedAsyncCallShouldWork(t, config.EnableEpochs{
-			RelayedNonceFixEnableEpoch: 0,
+			RelayedNonceFixEnableEpoch:          0,
+			RelayedTransactionsV1V2DisableEpoch: integrationTests.UnreachableEpoch,
 		}, senderAddr)
 		defer testContext.Close()
 
@@ -42,7 +44,7 @@ func TestRelayedAsyncCallShouldWork(t *testing.T) {
 }
 
 func testRelayedAsyncCallShouldWork(t *testing.T, enableEpochs config.EnableEpochs, senderAddr []byte) *vm.VMTestContext {
-	testContext, err := vm.CreatePreparedTxProcessorWithVMs(enableEpochs)
+	testContext, err := vm.CreatePreparedTxProcessorWithVMs(enableEpochs, 1)
 	require.Nil(t, err)
 
 	localEgldBalance := big.NewInt(100000000)

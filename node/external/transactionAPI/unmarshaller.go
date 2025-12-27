@@ -10,6 +10,7 @@ import (
 	"github.com/multiversx/mx-chain-core-go/data/smartContractResult"
 	"github.com/multiversx/mx-chain-core-go/data/transaction"
 	"github.com/multiversx/mx-chain-core-go/marshal"
+	"github.com/multiversx/mx-chain-go/common"
 	"github.com/multiversx/mx-chain-go/sharding"
 )
 
@@ -18,6 +19,7 @@ type txUnmarshaller struct {
 	addressPubKeyConverter core.PubkeyConverter
 	marshalizer            marshal.Marshalizer
 	dataFieldParser        DataFieldParser
+	enableEpochsHandler    core.EnableEpochsHandler
 }
 
 func newTransactionUnmarshaller(
@@ -25,12 +27,14 @@ func newTransactionUnmarshaller(
 	addressPubKeyConverter core.PubkeyConverter,
 	dataFieldParser DataFieldParser,
 	shardCoordinator sharding.Coordinator,
+	enableEpochsHandler core.EnableEpochsHandler,
 ) *txUnmarshaller {
 	return &txUnmarshaller{
 		marshalizer:            marshalizer,
 		addressPubKeyConverter: addressPubKeyConverter,
 		dataFieldParser:        dataFieldParser,
 		shardCoordinator:       shardCoordinator,
+		enableEpochsHandler:    enableEpochsHandler,
 	}
 }
 
@@ -51,7 +55,11 @@ func (tu *txUnmarshaller) unmarshalReceipt(receiptBytes []byte) (*transaction.Ap
 	}, nil
 }
 
-func (tu *txUnmarshaller) unmarshalTransaction(txBytes []byte, txType transaction.TxType) (*transaction.ApiTransactionResult, error) {
+func (tu *txUnmarshaller) unmarshalTransaction(
+	txBytes []byte,
+	txType transaction.TxType,
+	txEpoch uint32,
+) (*transaction.ApiTransactionResult, error) {
 	var apiTx *transaction.ApiTransactionResult
 	var err error
 
@@ -101,7 +109,21 @@ func (tu *txUnmarshaller) unmarshalTransaction(txBytes []byte, txType transactio
 	}
 
 	apiTx.ReceiversShardIDs = res.ReceiversShardID
-	apiTx.IsRelayed = res.IsRelayed
+
+	hasValidRelayer := len(apiTx.RelayerAddress) == len(apiTx.Sender) && len(apiTx.RelayerAddress) > 0
+	hasValidRelayerSignature := len(apiTx.RelayerSignature) == len(apiTx.Signature) && len(apiTx.RelayerSignature) > 0
+	isRelayedV3 := hasValidRelayer && hasValidRelayerSignature
+	apiTx.IsRelayed = res.IsRelayed || isRelayedV3
+
+	if res.IsRelayed && tu.enableEpochsHandler.IsFlagEnabledInEpoch(common.RelayedTransactionsV1V2DisableFlag, txEpoch) {
+		// will be treated as move balance, so reset some fields
+		apiTx.IsRelayed = false
+		apiTx.Function = ""
+		apiTx.RelayerAddress = ""
+		apiTx.RelayerSignature = ""
+		apiTx.Receivers = []string{}
+		apiTx.ReceiversShardIDs = []uint32{}
+	}
 
 	return apiTx, nil
 }
@@ -132,6 +154,12 @@ func (tu *txUnmarshaller) prepareNormalTx(tx *transaction.Transaction) *transact
 		apiTx.GuardianAddr = tu.addressPubKeyConverter.SilentEncode(tx.GuardianAddr, log)
 		apiTx.GuardianSignature = hex.EncodeToString(tx.GuardianSignature)
 	}
+	if len(tx.RelayerAddr) > 0 {
+		apiTx.RelayerAddress = tu.addressPubKeyConverter.SilentEncode(tx.RelayerAddr, log)
+	}
+	if len(tx.RelayerSignature) > 0 {
+		apiTx.RelayerSignature = hex.EncodeToString(tx.RelayerSignature)
+	}
 
 	return apiTx
 }
@@ -161,6 +189,12 @@ func (tu *txUnmarshaller) prepareInvalidTx(tx *transaction.Transaction) *transac
 	if len(tx.GuardianAddr) > 0 {
 		apiTx.GuardianAddr = tu.addressPubKeyConverter.SilentEncode(tx.GuardianAddr, log)
 		apiTx.GuardianSignature = hex.EncodeToString(tx.GuardianSignature)
+	}
+	if len(tx.RelayerAddr) > 0 {
+		apiTx.RelayerAddress = tu.addressPubKeyConverter.SilentEncode(tx.RelayerAddr, log)
+	}
+	if len(tx.RelayerSignature) > 0 {
+		apiTx.RelayerSignature = hex.EncodeToString(tx.RelayerSignature)
 	}
 
 	return apiTx

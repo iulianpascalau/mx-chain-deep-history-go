@@ -11,6 +11,7 @@ import (
 	"github.com/multiversx/mx-chain-go/common"
 	"github.com/multiversx/mx-chain-go/config"
 	"github.com/multiversx/mx-chain-go/process"
+	"github.com/multiversx/mx-chain-go/sharding"
 	"github.com/multiversx/mx-chain-go/statusHandler"
 )
 
@@ -19,6 +20,10 @@ type rewardsConfig struct {
 	leaderPercentage                 float64
 	protocolSustainabilityPercentage float64
 	protocolSustainabilityAddress    string
+	ecosystemGrowthPercentage        float64
+	ecosystemGrowthAddress           string
+	growthDividendPercentage         float64
+	growthDividendAddress            string
 	developerPercentage              float64
 	topUpGradientPoint               *big.Int
 	topUpFactor                      float64
@@ -31,8 +36,12 @@ type rewardsConfigHandler struct {
 }
 
 // newRewardsConfigHandler returns a new instance of rewardsConfigHandler
-func newRewardsConfigHandler(rewardsSettings config.RewardsSettings) (*rewardsConfigHandler, error) {
-	rewardsConfigSlice, err := checkAndParseRewardsSettings(rewardsSettings)
+func newRewardsConfigHandler(
+	rewardsSettings config.RewardsSettings,
+	pubkeyConverter core.PubkeyConverter,
+	shardCoordinator sharding.Coordinator,
+) (*rewardsConfigHandler, error) {
+	rewardsConfigSlice, err := checkAndParseRewardsSettings(rewardsSettings, pubkeyConverter, shardCoordinator)
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +117,30 @@ func (handler *rewardsConfigHandler) getRewardsConfigForEpoch(epoch uint32) *rew
 	return rewardsConfigSetting
 }
 
+// getEcosystemGrowthPercentage returns the ecosystem growth percentage in a specific epoch
+func (handler *rewardsConfigHandler) getEcosystemGrowthPercentage(epoch uint32) float64 {
+	rc := handler.getRewardsConfigForEpoch(epoch)
+	return rc.ecosystemGrowthPercentage
+}
+
+// getGrowthDividendPercentage returns the growth dividend percentage in a specific epoch
+func (handler *rewardsConfigHandler) getGrowthDividendPercentage(epoch uint32) float64 {
+	rc := handler.getRewardsConfigForEpoch(epoch)
+	return rc.growthDividendPercentage
+}
+
+// getEcosystemGrowthAddress returns the ecosystem growth address in a specific epoch
+func (handler *rewardsConfigHandler) getEcosystemGrowthAddress(epoch uint32) string {
+	rc := handler.getRewardsConfigForEpoch(epoch)
+	return rc.ecosystemGrowthAddress
+}
+
+// getGrowthDividendAddress returns the growth dividend address in a specific epoch
+func (handler *rewardsConfigHandler) getGrowthDividendAddress(epoch uint32) string {
+	rc := handler.getRewardsConfigForEpoch(epoch)
+	return rc.growthDividendAddress
+}
+
 func (handler *rewardsConfigHandler) updateRewardsConfigMetrics(epoch uint32) {
 	rc := handler.getRewardsConfigForEpoch(epoch)
 
@@ -129,7 +162,11 @@ func (handler *rewardsConfigHandler) updateRewardsConfigMetrics(epoch uint32) {
 	)
 }
 
-func checkAndParseRewardsSettings(rewardsSettings config.RewardsSettings) ([]*rewardsConfig, error) {
+func checkAndParseRewardsSettings(
+	rewardsSettings config.RewardsSettings,
+	pubkeyConverter core.PubkeyConverter,
+	shardCoordinator sharding.Coordinator,
+) ([]*rewardsConfig, error) {
 	rewardsConfigSlice := make([]*rewardsConfig, 0, len(rewardsSettings.RewardsConfigByEpoch))
 	for _, rewardsCfg := range rewardsSettings.RewardsConfigByEpoch {
 		err := checkRewardConfig(rewardsCfg)
@@ -139,11 +176,30 @@ func checkAndParseRewardsSettings(rewardsSettings config.RewardsSettings) ([]*re
 
 		topUpGradientPoint, _ := big.NewInt(0).SetString(rewardsCfg.TopUpGradientPoint, 10)
 
+		protocolSustainability, err := decodeAddressAndVerifyShard(pubkeyConverter, shardCoordinator, rewardsCfg.ProtocolSustainabilityAddress)
+		if err != nil {
+			return nil, err
+		}
+
+		ecosystemGrowth, err := decodeAddressAndVerifyShard(pubkeyConverter, shardCoordinator, rewardsCfg.EcosystemGrowthAddress)
+		if err != nil {
+			return nil, err
+		}
+
+		growthDividend, err := decodeAddressAndVerifyShard(pubkeyConverter, shardCoordinator, rewardsCfg.GrowthDividendAddress)
+		if err != nil {
+			return nil, err
+		}
+
 		rewardsConfigSlice = append(rewardsConfigSlice, &rewardsConfig{
 			rewardsSettingEpoch:              rewardsCfg.EpochEnable,
 			leaderPercentage:                 rewardsCfg.LeaderPercentage,
 			protocolSustainabilityPercentage: rewardsCfg.ProtocolSustainabilityPercentage,
-			protocolSustainabilityAddress:    rewardsCfg.ProtocolSustainabilityAddress,
+			protocolSustainabilityAddress:    string(protocolSustainability),
+			ecosystemGrowthPercentage:        rewardsCfg.EcosystemGrowthPercentage,
+			ecosystemGrowthAddress:           string(ecosystemGrowth),
+			growthDividendPercentage:         rewardsCfg.GrowthDividendPercentage,
+			growthDividendAddress:            string(growthDividend),
 			developerPercentage:              rewardsCfg.DeveloperPercentage,
 			topUpGradientPoint:               topUpGradientPoint,
 			topUpFactor:                      rewardsCfg.TopUpFactor,
@@ -153,16 +209,51 @@ func checkAndParseRewardsSettings(rewardsSettings config.RewardsSettings) ([]*re
 	return rewardsConfigSlice, nil
 }
 
+func decodeAddressAndVerifyShard(
+	pubkeyConverter core.PubkeyConverter,
+	shardCoordinator sharding.Coordinator,
+	address string,
+) ([]byte, error) {
+	decodedAddress, err := pubkeyConverter.Decode(address)
+	if err != nil {
+		log.Warn("invalid reward address",
+			"err", err,
+			"provided address", address,
+		)
+		return nil, err
+	}
+
+	protocolSustainabilityShardID := shardCoordinator.ComputeId(decodedAddress)
+	if protocolSustainabilityShardID == core.MetachainShardId {
+		return nil, process.ErrProtocolSustainabilityAddressInMetachain
+	}
+
+	return decodedAddress, nil
+}
+
 func checkRewardConfig(rewardsCfg config.EpochRewardSettings) error {
 	if isPercentageInvalid(rewardsCfg.LeaderPercentage) ||
 		isPercentageInvalid(rewardsCfg.DeveloperPercentage) ||
 		isPercentageInvalid(rewardsCfg.ProtocolSustainabilityPercentage) ||
-		isPercentageInvalid(rewardsCfg.TopUpFactor) {
+		isPercentageInvalid(rewardsCfg.TopUpFactor) ||
+		isPercentageInvalid(rewardsCfg.GrowthDividendPercentage) ||
+		isPercentageInvalid(rewardsCfg.EcosystemGrowthPercentage) {
+		return process.ErrInvalidRewardsPercentages
+	}
+
+	accPercentage := rewardsCfg.ProtocolSustainabilityPercentage + rewardsCfg.GrowthDividendPercentage + rewardsCfg.EcosystemGrowthPercentage
+	if isPercentageInvalid(accPercentage) {
 		return process.ErrInvalidRewardsPercentages
 	}
 
 	if len(rewardsCfg.ProtocolSustainabilityAddress) == 0 {
 		return process.ErrNilProtocolSustainabilityAddress
+	}
+	if len(rewardsCfg.EcosystemGrowthAddress) == 0 {
+		return process.ErrNilEcosystemGrowthAddress
+	}
+	if len(rewardsCfg.GrowthDividendAddress) == 0 {
+		return process.ErrNilGrowthDividendAddress
 	}
 
 	_, ok := big.NewInt(0).SetString(rewardsCfg.TopUpGradientPoint, 10)

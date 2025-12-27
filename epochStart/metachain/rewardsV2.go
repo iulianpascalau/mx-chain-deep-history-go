@@ -70,6 +70,11 @@ func NewRewardsCreatorV2(args RewardsCreatorArgsV2) (*rewardsCreatorV2, error) {
 	return rc, nil
 }
 
+// GetAcceleratorRewards returns the sum of all rewards
+func (rc *rewardsCreatorV2) GetAcceleratorRewards() *big.Int {
+	return rc.economicsDataProvider.RewardsForAccelerator()
+}
+
 // CreateRewardsMiniBlocks creates the rewards miniblocks according to economics data and validator info.
 // This method applies the rewards according to the economics version 2 proposal, which takes into consideration
 // stake top-up values per node
@@ -102,12 +107,12 @@ func (rc *rewardsCreatorV2) CreateRewardsMiniBlocks(
 	rc.clean()
 	rc.flagDelegationSystemSCEnabled.SetValue(metaBlock.GetEpoch() >= rc.enableEpochsHandler.GetActivationEpoch(common.StakingV2Flag))
 
-	protRwdTx, protRwdShardId, err := rc.createProtocolSustainabilityRewardTransaction(metaBlock, computedEconomics)
+	protRwdTx, protRwdShardId, err := rc.createProtocolSustainabilityRewardTransaction(metaBlock, rc.economicsDataProvider.RewardsForProtocolSustainability())
 	if err != nil {
 		return nil, err
 	}
 
-	nodesRewardInfo, dustFromRewardsPerNode := rc.computeRewardsPerNode(validatorsInfo)
+	nodesRewardInfo, dustFromRewardsPerNode := rc.computeRewardsPerNode(validatorsInfo, metaBlock.GetEpoch())
 	log.Debug("arithmetic difference from dust rewards per node", "value", dustFromRewardsPerNode)
 
 	dust, err := rc.addValidatorRewardsToMiniBlocks(metaBlock, miniBlocks, nodesRewardInfo)
@@ -119,12 +124,65 @@ func (rc *rewardsCreatorV2) CreateRewardsMiniBlocks(
 	log.Debug("accumulated dust for protocol sustainability", "value", dust)
 
 	rc.adjustProtocolSustainabilityRewards(protRwdTx, dust)
-	err = rc.addProtocolRewardToMiniBlocks(protRwdTx, miniBlocks, protRwdShardId)
+	err = rc.addAcceleratorRewardToMiniBlocks(protRwdTx, miniBlocks, protRwdShardId)
+	if err != nil {
+		return nil, err
+	}
+
+	ecoGrowthRwdTx, ecoGrowthShardId, err := rc.createEcosystemGrowthRewardTransaction(metaBlock)
+	if err != nil {
+		return nil, err
+	}
+	growthDivRwdTx, growthDivShardId, err := rc.createGrowthDividendRewardTransaction(metaBlock)
+	if err != nil {
+		return nil, err
+	}
+	err = rc.addAcceleratorRewardToMiniBlocks(ecoGrowthRwdTx, miniBlocks, ecoGrowthShardId)
+	if err != nil {
+		return nil, err
+	}
+	err = rc.addAcceleratorRewardToMiniBlocks(growthDivRwdTx, miniBlocks, growthDivShardId)
 	if err != nil {
 		return nil, err
 	}
 
 	return rc.finalizeMiniBlocks(miniBlocks), nil
+}
+
+func (rc *rewardsCreatorV2) createEcosystemGrowthRewardTransaction(
+	metaBlock data.MetaHeaderHandler,
+) (*rewardTx.RewardTx, uint32, error) {
+	epoch := metaBlock.GetEpoch()
+	rwdAddr := rc.rewardsHandler.EcosystemGrowthAddressInEpoch(epoch)
+	shardId := rc.shardCoordinator.ComputeId([]byte(rwdAddr))
+
+	rwdTx := &rewardTx.RewardTx{
+		Round:   metaBlock.GetRound(),
+		Epoch:   epoch,
+		RcvAddr: []byte(rwdAddr),
+		Value:   big.NewInt(0).Set(rc.economicsDataProvider.RewardsForEcosystemGrowth()),
+	}
+
+	rc.accumulatedRewards.Add(rc.accumulatedRewards, rwdTx.Value)
+	return rwdTx, shardId, nil
+}
+
+func (rc *rewardsCreatorV2) createGrowthDividendRewardTransaction(
+	metaBlock data.MetaHeaderHandler,
+) (*rewardTx.RewardTx, uint32, error) {
+	epoch := metaBlock.GetEpoch()
+	rwdAddr := rc.rewardsHandler.GrowthDividendAddressInEpoch(epoch)
+	shardId := rc.shardCoordinator.ComputeId([]byte(rwdAddr))
+
+	rwdTx := &rewardTx.RewardTx{
+		Round:   metaBlock.GetRound(),
+		Epoch:   epoch,
+		RcvAddr: []byte(rwdAddr),
+		Value:   big.NewInt(0).Set(rc.economicsDataProvider.RewardsForGrowthDividend()),
+	}
+
+	rc.accumulatedRewards.Add(rc.accumulatedRewards, rwdTx.Value)
+	return rwdTx, shardId, nil
 }
 
 func (rc *rewardsCreatorV2) adjustProtocolSustainabilityRewards(protocolSustainabilityRwdTx *rewardTx.RewardTx, dustRewards *big.Int) {
@@ -145,7 +203,7 @@ func (rc *rewardsCreatorV2) adjustProtocolSustainabilityRewards(protocolSustaina
 		"destination", protocolSustainabilityRwdTx.GetRcvAddr(),
 		"value", protocolSustainabilityRwdTx.GetValue().String())
 
-	rc.protocolSustainabilityValue.Set(protocolSustainabilityRwdTx.Value)
+	rc.economicsDataProvider.SetRewardsForProtocolSustainability(protocolSustainabilityRwdTx.Value)
 }
 
 // VerifyRewardsMiniBlocks verifies if received rewards miniblocks are correct
@@ -264,6 +322,7 @@ func (rc *rewardsCreatorV2) IsInterfaceNil() bool {
 
 func (rc *rewardsCreatorV2) computeRewardsPerNode(
 	validatorsInfo state.ShardValidatorsInfoMapHandler,
+	epoch uint32,
 ) (map[uint32][]*nodeRewardsData, *big.Int) {
 
 	var baseRewardsPerBlock *big.Int
@@ -274,7 +333,7 @@ func (rc *rewardsCreatorV2) computeRewardsPerNode(
 	totalStakeEligible := rc.stakingDataProvider.GetTotalStakeEligibleNodes()
 	totalTopUpEligible := rc.stakingDataProvider.GetTotalTopUpStakeEligibleNodes()
 	remainingToBeDistributed := rc.economicsDataProvider.RewardsToBeDistributedForBlocks()
-	topUpRewards := rc.computeTopUpRewards(remainingToBeDistributed, totalTopUpEligible)
+	topUpRewards := rc.computeTopUpRewards(remainingToBeDistributed, totalTopUpEligible, epoch)
 	baseRewards := big.NewInt(0).Sub(remainingToBeDistributed, topUpRewards)
 	nbBlocks := big.NewInt(int64(rc.economicsDataProvider.NumberOfBlocks()))
 	if nbBlocks.Cmp(zero) <= 0 {
@@ -289,7 +348,7 @@ func (rc *rewardsCreatorV2) computeRewardsPerNode(
 		"baseRewards", baseRewards.String(),
 		"topUpRewards", topUpRewards.String())
 
-	rc.fillBaseRewardsPerBlockPerNode(baseRewardsPerBlock)
+	rc.fillBaseRewardsPerBlockPerNode(baseRewardsPerBlock, epoch)
 
 	accumulatedDust := big.NewInt(0)
 	dust := rc.computeBaseRewardsPerNode(nodesRewardInfo, baseRewards)
@@ -379,7 +438,7 @@ func (rc *rewardsCreatorV2) computeTopUpRewardsPerNode(
 // x is the cumulative top-up stake value for eligible nodes
 // p is the cumulative eligible stake where rewards per day reach 1/2 of k (includes topUp for the eligible nodes)
 // pi is the mathematical constant pi = 3.1415...
-func (rc *rewardsCreatorV2) computeTopUpRewards(totalToDistribute *big.Int, totalTopUpEligible *big.Int) *big.Int {
+func (rc *rewardsCreatorV2) computeTopUpRewards(totalToDistribute *big.Int, totalTopUpEligible *big.Int, epoch uint32) *big.Int {
 	if totalToDistribute.Cmp(zero) <= 0 || totalTopUpEligible.Cmp(zero) <= 0 {
 		return big.NewInt(0)
 	}
@@ -388,15 +447,15 @@ func (rc *rewardsCreatorV2) computeTopUpRewards(totalToDistribute *big.Int, tota
 	log.Debug("computeTopUpRewards", "totalTopUpEligible", totalTopUpEligible.String())
 
 	// k = c * economics.TotalToDistribute, c = top-up reward factor (constant)
-	k := core.GetIntTrimmedPercentageOfValue(totalToDistribute, rc.rewardsHandler.RewardsTopUpFactor())
-	log.Debug("computeTopUpRewards", "topUpFactor", rc.rewardsHandler.RewardsTopUpFactor())
+	k := core.GetIntTrimmedPercentageOfValue(totalToDistribute, rc.rewardsHandler.RewardsTopUpFactorInEpoch(epoch))
+	log.Debug("computeTopUpRewards", "topUpFactor", rc.rewardsHandler.RewardsTopUpFactorInEpoch(epoch))
 	log.Debug("computeTopUpRewards", "k", k.String())
 
 	// p is the cumulative eligible stake where rewards per day reach 1/2 of k (constant)
 	// x/p - argument for atan
 	totalTopUpEligibleFloat := big.NewFloat(0).SetInt(totalTopUpEligible)
-	topUpGradientPointFloat := big.NewFloat(0).SetInt(rc.rewardsHandler.RewardsTopUpGradientPoint())
-	log.Debug("computeTopUpRewards", "topUpGradientPoint", rc.rewardsHandler.RewardsTopUpGradientPoint().String())
+	topUpGradientPointFloat := big.NewFloat(0).SetInt(rc.rewardsHandler.RewardsTopUpGradientPointInEpoch(epoch))
+	log.Debug("computeTopUpRewards", "topUpGradientPoint", rc.rewardsHandler.RewardsTopUpGradientPointInEpoch(epoch).String())
 
 	floatArg, _ := big.NewFloat(0).Quo(totalTopUpEligibleFloat, topUpGradientPointFloat).Float64()
 	log.Debug("computeTopUpRewards", "x/p", floatArg)

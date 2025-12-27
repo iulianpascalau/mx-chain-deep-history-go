@@ -32,6 +32,7 @@ const (
 	getRegisteredNFTsPath          = "/:address/registered-nfts"
 	getESDTNFTDataPath             = "/:address/nft/:tokenIdentifier/nonce/:nonce"
 	getGuardianData                = "/:address/guardian-data"
+	iterateKeysPath                = "/iterate-keys"
 	urlParamOnFinalBlock           = "onFinalBlock"
 	urlParamOnStartOfEpoch         = "onStartOfEpoch"
 	urlParamBlockNonce             = "blockNonce"
@@ -40,6 +41,9 @@ const (
 	urlParamHintEpoch              = "hintEpoch"
 	urlParamWithKeys               = "withKeys"
 )
+
+// maxUint64 is represented on 20 characters as a string
+const maxNumCharsForNonceAsString = 20
 
 // addressFacadeHandler defines the methods to be implemented by a facade for handling address requests
 type addressFacadeHandler interface {
@@ -55,6 +59,7 @@ type addressFacadeHandler interface {
 	GetESDTsWithRole(address string, role string, options api.AccountQueryOptions) ([]string, api.BlockInfo, error)
 	GetAllESDTTokens(address string, options api.AccountQueryOptions) (map[string]*esdt.ESDigitalToken, api.BlockInfo, error)
 	GetKeyValuePairs(address string, options api.AccountQueryOptions) (map[string]string, api.BlockInfo, error)
+	IterateKeys(address string, numKeys uint, iteratorState [][]byte, options api.AccountQueryOptions) (map[string]string, [][]byte, api.BlockInfo, error)
 	GetGuardianData(address string, options api.AccountQueryOptions) (api.GuardianData, api.BlockInfo, error)
 	IsDataTrieMigrated(address string, options api.AccountQueryOptions) (bool, error)
 	IsInterfaceNil() bool
@@ -72,9 +77,11 @@ type esdtTokenData struct {
 	Properties      string `json:"properties"`
 }
 
-type esdtNFTTokenData struct {
+// ESDTNFTTokenData defines the exposed nft token data structure
+type ESDTNFTTokenData struct {
 	TokenIdentifier string   `json:"tokenIdentifier"`
 	Balance         string   `json:"balance"`
+	Type            string   `json:"type"`
 	Properties      string   `json:"properties,omitempty"`
 	Name            string   `json:"name,omitempty"`
 	Nonce           uint64   `json:"nonce,omitempty"`
@@ -131,6 +138,11 @@ func NewAddressGroup(facade addressFacadeHandler) (*addressGroup, error) {
 			Path:    getKeysPath,
 			Method:  http.MethodGet,
 			Handler: ag.getKeyValuePairs,
+		},
+		{
+			Path:    iterateKeysPath,
+			Method:  http.MethodPost,
+			Handler: ag.iterateKeys,
 		},
 		{
 			Path:    getESDTBalancePath,
@@ -325,7 +337,7 @@ func (ag *addressGroup) getGuardianData(c *gin.Context) {
 	shared.RespondWithSuccess(c, gin.H{"guardianData": guardianData, "blockInfo": blockInfo})
 }
 
-// addressGroup returns all the key-value pairs for the given address
+// getKeyValuePairs returns all the key-value pairs for the given address
 func (ag *addressGroup) getKeyValuePairs(c *gin.Context) {
 	addr, options, err := extractBaseParams(c)
 	if err != nil {
@@ -340,6 +352,47 @@ func (ag *addressGroup) getKeyValuePairs(c *gin.Context) {
 	}
 
 	shared.RespondWithSuccess(c, gin.H{"pairs": value, "blockInfo": blockInfo})
+}
+
+// IterateKeysRequest defines the request structure for iterating keys
+type IterateKeysRequest struct {
+	Address       string   `json:"address"`
+	NumKeys       uint     `json:"numKeys"`
+	IteratorState [][]byte `json:"iteratorState"`
+}
+
+// iterateKeys iterates keys for the given address
+func (ag *addressGroup) iterateKeys(c *gin.Context) {
+	var iterateKeysRequest = &IterateKeysRequest{}
+	err := c.ShouldBindJSON(&iterateKeysRequest)
+	if err != nil {
+		shared.RespondWithValidationError(c, errors.ErrValidation, err)
+		return
+	}
+
+	if len(iterateKeysRequest.Address) == 0 {
+		shared.RespondWithValidationError(c, errors.ErrValidation, errors.ErrEmptyAddress)
+		return
+	}
+
+	options, err := extractAccountQueryOptions(c)
+	if err != nil {
+		shared.RespondWithValidationError(c, errors.ErrIterateKeys, err)
+		return
+	}
+
+	value, newIteratorState, blockInfo, err := ag.getFacade().IterateKeys(
+		iterateKeysRequest.Address,
+		iterateKeysRequest.NumKeys,
+		iterateKeysRequest.IteratorState,
+		options,
+	)
+	if err != nil {
+		shared.RespondWithInternalError(c, errors.ErrIterateKeys, err)
+		return
+	}
+
+	shared.RespondWithSuccess(c, gin.H{"pairs": value, "newIteratorState": newIteratorState, "blockInfo": blockInfo})
 }
 
 // getESDTBalance returns the balance for the given address and esdt token
@@ -448,7 +501,7 @@ func (ag *addressGroup) getAllESDTData(c *gin.Context) {
 		return
 	}
 
-	formattedTokens := make(map[string]*esdtNFTTokenData)
+	formattedTokens := make(map[string]*ESDTNFTTokenData)
 	for tokenID, esdtData := range tokens {
 		tokenData := buildTokenDataApiResponse(tokenID, esdtData)
 
@@ -481,12 +534,14 @@ func (ag *addressGroup) isDataTrieMigrated(c *gin.Context) {
 	shared.RespondWithSuccess(c, gin.H{"isMigrated": isMigrated})
 }
 
-func buildTokenDataApiResponse(tokenIdentifier string, esdtData *esdt.ESDigitalToken) *esdtNFTTokenData {
-	tokenData := &esdtNFTTokenData{
+func buildTokenDataApiResponse(tokenIdentifier string, esdtData *esdt.ESDigitalToken) *ESDTNFTTokenData {
+	tokenData := &ESDTNFTTokenData{
 		TokenIdentifier: tokenIdentifier,
 		Balance:         esdtData.Value.String(),
 		Properties:      hex.EncodeToString(esdtData.Properties),
 	}
+
+	tokenType := core.ESDTType(esdtData.Type).String()
 	if esdtData.TokenMetaData != nil {
 		tokenData.Name = string(esdtData.TokenMetaData.Name)
 		tokenData.Nonce = esdtData.TokenMetaData.Nonce
@@ -495,9 +550,23 @@ func buildTokenDataApiResponse(tokenIdentifier string, esdtData *esdt.ESDigitalT
 		tokenData.Hash = esdtData.TokenMetaData.Hash
 		tokenData.URIs = esdtData.TokenMetaData.URIs
 		tokenData.Attributes = esdtData.TokenMetaData.Attributes
+
+		tokenType = getTokenType(esdtData.GetType(), tokenData.Nonce)
 	}
 
+	tokenData.Type = tokenType
+
 	return tokenData
+}
+
+func getTokenType(tokenType uint32, tokenNonce uint64) string {
+	isNotFungible := tokenNonce != 0
+	tokenTypeNotSet := isNotFungible && core.ESDTType(tokenType) == core.NonFungible
+	if tokenTypeNotSet {
+		return ""
+	}
+
+	return core.ESDTType(tokenType).String()
 }
 
 func (ag *addressGroup) getFacade() addressFacadeHandler {
@@ -567,6 +636,9 @@ func extractGetESDTNFTDataParams(c *gin.Context) (string, string, *big.Int, api.
 	nonceAsStr := c.Param("nonce")
 	if nonceAsStr == "" {
 		return "", "", nil, api.AccountQueryOptions{}, errors.ErrNonceInvalid
+	}
+	if len(nonceAsStr) > maxNumCharsForNonceAsString {
+		return "", "", nil, api.AccountQueryOptions{}, fmt.Errorf("%w: nonce too long, num chars %v, max num chars %v", errors.ErrNonceInvalid, len(nonceAsStr), maxNumCharsForNonceAsString)
 	}
 
 	nonceAsBigInt, okConvert := big.NewInt(0).SetString(nonceAsStr, 10)

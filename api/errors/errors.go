@@ -28,6 +28,9 @@ var ErrGetValueForKey = errors.New("get value for key error")
 // ErrGetKeyValuePairs signals an error in getting the key-value pairs of a key for an account
 var ErrGetKeyValuePairs = errors.New("get key-value pairs error")
 
+// ErrIterateKeys signals an error in iterating over the keys of an account
+var ErrIterateKeys = errors.New("iterate keys error")
+
 // ErrGetESDTBalance signals an error in getting esdt balance for given address
 var ErrGetESDTBalance = errors.New("get esdt balance for account error")
 
@@ -42,6 +45,12 @@ var ErrGetESDTNFTData = errors.New("get esdt nft data for account error")
 
 // ErrEmptyAddress signals that an empty address was provided
 var ErrEmptyAddress = errors.New("address is empty")
+
+// ErrEmptyNumKeys signals that an empty numKeys was provided
+var ErrEmptyNumKeys = errors.New("numKeys is empty")
+
+// ErrEmptyCheckpointId signals that an empty checkpointId was provided
+var ErrEmptyCheckpointId = errors.New("checkpointId is empty")
 
 // ErrEmptyKey signals that an empty key was provided
 var ErrEmptyKey = errors.New("key is empty")
@@ -64,6 +73,9 @@ var ErrTxGenerationFailed = errors.New("transaction generation failed")
 // ErrValidationEmptyTxHash signals that an empty tx hash was provided
 var ErrValidationEmptyTxHash = errors.New("TxHash is empty")
 
+// ErrValidationEmptySCRHash signals that provided smart contract result hash is empty
+var ErrValidationEmptySCRHash = errors.New("SCRHash is empty")
+
 // ErrInvalidBlockNonce signals that an invalid block nonce was provided
 var ErrInvalidBlockNonce = errors.New("invalid block nonce")
 
@@ -78,6 +90,9 @@ var ErrValidationEmptyBlockHash = errors.New("block hash is empty")
 
 // ErrGetTransaction signals an error happening when trying to fetch a transaction
 var ErrGetTransaction = errors.New("getting transaction failed")
+
+// ErrGetSmartContractResults signals an error happening when trying to fetch smart contract results
+var ErrGetSmartContractResults = errors.New("getting smart contract results failed")
 
 // ErrGetBlock signals an error happening when trying to fetch a block
 var ErrGetBlock = errors.New("getting block failed")
@@ -174,3 +189,6 @@ var ErrGetWaitingManagedKeys = errors.New("error getting the waiting managed key
 
 // ErrGetWaitingEpochsLeftForPublicKey signals that an error occurred while getting the waiting epochs left for public key
 var ErrGetWaitingEpochsLeftForPublicKey = errors.New("error getting the waiting epochs left for public key")
+
+// ErrRecursiveRelayedTxIsNotAllowed signals that recursive relayed tx is not allowed
+var ErrRecursiveRelayedTxIsNotAllowed = errors.New("recursive relayed tx is not allowed")

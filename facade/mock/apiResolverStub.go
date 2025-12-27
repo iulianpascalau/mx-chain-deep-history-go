@@ -2,6 +2,7 @@ package mock
 
 import (
 	"context"
+	"github.com/multiversx/mx-chain-core-go/data/smartContractResult"
 
 	"github.com/multiversx/mx-chain-core-go/data/alteredAccount"
 	"github.com/multiversx/mx-chain-core-go/data/api"
@@ -50,6 +51,26 @@ type ApiResolverStub struct {
 	GetEligibleManagedKeysCalled                func() ([]string, error)
 	GetWaitingManagedKeysCalled                 func() ([]string, error)
 	GetWaitingEpochsLeftForPublicKeyCalled      func(publicKey string) (uint32, error)
+	GetSCRsByTxHashCalled                       func(txHash string, scrHash string) ([]*transaction.ApiSmartContractResult, error)
+	SimulateSCRExecutionCostCalled              func(scr *smartContractResult.SmartContractResult) (*transaction.CostResponse, error)
+}
+
+// SimulateSCRExecutionCost -
+func (ars *ApiResolverStub) SimulateSCRExecutionCost(scr *smartContractResult.SmartContractResult) (*transaction.CostResponse, error) {
+	if ars.SimulateSCRExecutionCostCalled != nil {
+		return ars.SimulateSCRExecutionCostCalled(scr)
+	}
+
+	return nil, nil
+}
+
+// GetSCRsByTxHash -
+func (ars *ApiResolverStub) GetSCRsByTxHash(txHash string, scrHash string) ([]*transaction.ApiSmartContractResult, error) {
+	if ars.GetSCRsByTxHashCalled != nil {
+		return ars.GetSCRsByTxHashCalled(txHash, scrHash)
+	}
+
+	return nil, nil
 }
 
 // GetTransaction -

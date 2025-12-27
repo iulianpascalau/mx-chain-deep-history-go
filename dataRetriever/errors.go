@@ -116,9 +116,6 @@ var ErrCacheConfigInvalidSize = errors.New("cache parameter [size] is not valid,
 // ErrCacheConfigInvalidShards signals that the cache parameter "shards" is invalid
 var ErrCacheConfigInvalidShards = errors.New("cache parameter [shards] is not valid, it must be a positive number")
 
-// ErrCacheConfigInvalidEconomics signals that an economics parameter required by the cache is invalid
-var ErrCacheConfigInvalidEconomics = errors.New("cache-economics parameter is not valid")
-
 // ErrCacheConfigInvalidSharding signals that a sharding parameter required by the cache is invalid
 var ErrCacheConfigInvalidSharding = errors.New("cache-sharding parameter is not valid")
 
@@ -265,3 +262,12 @@ var ErrNilValidatorInfoStorage = errors.New("nil validator info storage")
 
 // ErrValidatorInfoNotFound signals that no validator info was found
 var ErrValidatorInfoNotFound = errors.New("validator info not found")
+
+// ErrNilProofsPool signals that a nil proofs pool has been provided
+var ErrNilProofsPool = errors.New("nil proofs pool")
+
+// ErrEquivalentProofsNotFound signals that no equivalent proof found
+var ErrEquivalentProofsNotFound = errors.New("equivalent proof not found")
+
+// ErrNilEnableEpochsHandler signals that a nil enable epochs handler has been provided
+var ErrNilEnableEpochsHandler = errors.New("nil enable epochs handler")

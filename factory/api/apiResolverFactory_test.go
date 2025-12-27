@@ -19,6 +19,7 @@ import (
 	"github.com/multiversx/mx-chain-go/process"
 	"github.com/multiversx/mx-chain-go/process/sync/disabled"
 	"github.com/multiversx/mx-chain-go/state"
+	stateDisabled "github.com/multiversx/mx-chain-go/state/disabled"
 	"github.com/multiversx/mx-chain-go/testscommon"
 	componentsMock "github.com/multiversx/mx-chain-go/testscommon/components"
 	"github.com/multiversx/mx-chain-go/testscommon/dataRetriever"
@@ -186,7 +187,7 @@ func TestCreateApiResolver(t *testing.T) {
 		failingStepsInstance.addressPublicKeyConverterFailingStep = 3
 		apiResolver, err := api.CreateApiResolver(failingArgs)
 		require.NotNil(t, err)
-		require.True(t, strings.Contains(strings.ToLower(err.Error()), "public key converter"))
+		require.True(t, strings.Contains(strings.ToLower(err.Error()), "key converter"))
 		require.True(t, check.IfNil(apiResolver))
 	})
 	t.Run("createBuiltinFuncs fails should error", func(t *testing.T) {
@@ -275,7 +276,7 @@ func TestCreateApiResolver(t *testing.T) {
 		failingStepsInstance.addressPublicKeyConverterFailingStep = 10
 		apiResolver, err := api.CreateApiResolver(failingArgs)
 		require.NotNil(t, err)
-		require.True(t, strings.Contains(strings.ToLower(err.Error()), "public key converter"))
+		require.True(t, strings.Contains(strings.ToLower(err.Error()), "key converter"))
 		require.True(t, check.IfNil(apiResolver))
 	})
 	t.Run("should work", func(t *testing.T) {
@@ -313,6 +314,7 @@ func createMockSCQueryElementArgs() api.SCQueryElementArgs {
 						WasmVMVersions: []config.WasmVMVersionByEpoch{
 							{StartEpoch: 0, Version: "*"},
 						},
+						TransferAndExecuteByUserAddresses: []string{"erd1qqqqqqqqqqqqqpgqr46jrxr6r2unaqh75ugd308dwx5vgnhwh47qtvepe3"},
 					},
 				},
 			},
@@ -328,7 +330,7 @@ func createMockSCQueryElementArgs() api.SCQueryElementArgs {
 			EpochChangeNotifier:          &epochNotifierMock.EpochNotifierStub{},
 			EnableEpochsHandlerField:     &enableEpochsHandlerMock.EnableEpochsHandlerStub{},
 			UInt64ByteSliceConv:          &testsMocks.Uint64ByteSliceConverterMock{},
-			EconomicsHandler:             &economicsmocks.EconomicsHandlerStub{},
+			EconomicsHandler:             &economicsmocks.EconomicsHandlerMock{},
 			NodesConfig:                  &genesisMocks.NodesSetupStub{},
 			Hash:                         &testscommon.HasherStub{},
 			RatingHandler:                &testscommon.RaterMock{},
@@ -342,6 +344,9 @@ func createMockSCQueryElementArgs() api.SCQueryElementArgs {
 			},
 			PeerAccountsCalled: func() state.AccountsAdapter {
 				return &stateMocks.AccountsStub{}
+			},
+			StateAccessesCollectorCalled: func() state.StateAccessesCollector {
+				return stateDisabled.NewDisabledStateAccessesCollector()
 			},
 		},
 		StatusCoreComponents: &factory.StatusCoreComponentsStub{

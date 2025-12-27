@@ -11,13 +11,14 @@ import (
 	"github.com/multiversx/mx-chain-core-go/core/check"
 	"github.com/multiversx/mx-chain-core-go/hashing"
 	"github.com/multiversx/mx-chain-core-go/marshal"
+	logger "github.com/multiversx/mx-chain-logger-go"
+	vmcommon "github.com/multiversx/mx-chain-vm-common-go"
+
 	"github.com/multiversx/mx-chain-go/common"
 	"github.com/multiversx/mx-chain-go/dataRetriever"
 	"github.com/multiversx/mx-chain-go/errors"
 	"github.com/multiversx/mx-chain-go/trie/keyBuilder"
 	"github.com/multiversx/mx-chain-go/trie/statistics"
-	logger "github.com/multiversx/mx-chain-logger-go"
-	vmcommon "github.com/multiversx/mx-chain-vm-common-go"
 )
 
 var log = logger.GetOrCreate("trie")
@@ -118,10 +119,7 @@ func (tr *patriciaMerkleTrie) Update(key, value []byte) error {
 	tr.mutOperation.Lock()
 	defer tr.mutOperation.Unlock()
 
-	log.Trace("update trie",
-		"key", hex.EncodeToString(key),
-		"val", hex.EncodeToString(value),
-	)
+	log.Trace("update trie", "key", key, "val", value)
 
 	return tr.update(key, value, core.NotSpecified)
 }
@@ -131,11 +129,7 @@ func (tr *patriciaMerkleTrie) UpdateWithVersion(key []byte, value []byte, versio
 	tr.mutOperation.Lock()
 	defer tr.mutOperation.Unlock()
 
-	log.Trace("update trie with version",
-		"key", hex.EncodeToString(key),
-		"val", hex.EncodeToString(value),
-		"version", version,
-	)
+	log.Trace("update trie with version", "key", key, "val", value, "version", version)
 
 	return tr.update(key, value, version)
 }
@@ -269,13 +263,8 @@ func (tr *patriciaMerkleTrie) Commit() error {
 	return nil
 }
 
-// Recreate returns a new trie that has the given root hash and database
-func (tr *patriciaMerkleTrie) Recreate(root []byte) (common.Trie, error) {
-	return tr.recreate(root, tr.trieStorage)
-}
-
-// RecreateFromEpoch returns a new trie, given the options
-func (tr *patriciaMerkleTrie) RecreateFromEpoch(options common.RootHashHolder) (common.Trie, error) {
+// Recreate returns a new trie, given the options
+func (tr *patriciaMerkleTrie) Recreate(options common.RootHashHolder) (common.Trie, error) {
 	if check.IfNil(options) {
 		return nil, ErrNilRootHashHolder
 	}
@@ -734,6 +723,16 @@ func (tr *patriciaMerkleTrie) IsMigratedToLatestVersion() (bool, error) {
 
 	versionForNewlyAddedData := core.GetVersionForNewData(tr.enableEpochsHandler)
 	return version == versionForNewlyAddedData, nil
+}
+
+// GetNodeDataFromHash returns the node data for the given hash
+func GetNodeDataFromHash(hash []byte, keyBuilder common.KeyBuilder, db common.TrieStorageInteractor, msh marshal.Marshalizer, hsh hashing.Hasher) ([]common.TrieNodeData, error) {
+	n, err := getNodeFromDBAndDecode(hash, db, msh, hsh)
+	if err != nil {
+		return nil, err
+	}
+
+	return n.getNodeData(keyBuilder)
 }
 
 // Close stops all the active goroutines started by the trie
