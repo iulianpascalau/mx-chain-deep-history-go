@@ -60,10 +60,11 @@ func NewPeerAuthenticationRequestsProcessor(args ArgPeerAuthenticationRequestsPr
 		return nil, err
 	}
 
-	var ctx context.Context
-	ctx, processor.cancel = context.WithTimeout(context.Background(), args.MaxTimeoutForRequests)
-
-	go processor.startRequestingMessages(ctx)
+	// JLS: 2024.11.05: do not start requesting authentication messages
+	//var ctx context.Context
+	_, processor.cancel = context.WithTimeout(context.Background(), args.MaxTimeoutForRequests)
+	//
+	//go processor.startRequestingMessages(ctx)
 
 	return processor, nil
 }

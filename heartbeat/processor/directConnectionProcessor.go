@@ -52,9 +52,10 @@ func NewDirectConnectionProcessor(args ArgsDirectConnectionProcessor) (*directCo
 		baseCrossShardTopic:         args.BaseCrossShardTopic,
 	}
 
-	var ctx context.Context
-	ctx, processor.cancel = context.WithCancel(context.Background())
-	go processor.processLoop(ctx)
+	// JLS: 2024.11.05: do not start direct connection processor
+	//var ctx context.Context
+	_, processor.cancel = context.WithCancel(context.Background())
+	//go processor.processLoop(ctx)
 
 	return processor, nil
 }

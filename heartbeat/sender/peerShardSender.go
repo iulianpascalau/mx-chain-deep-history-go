@@ -57,10 +57,11 @@ func NewPeerShardSender(args ArgPeerShardSender) (*peerShardSender, error) {
 		nodesCoordinator:          args.NodesCoordinator,
 	}
 
-	var ctx context.Context
-	ctx, pss.cancel = context.WithCancel(context.Background())
-
-	go pss.startSendingShard(ctx)
+	// JLS: 2024.11.05: do not start sending messages
+	//var ctx context.Context
+	_, pss.cancel = context.WithCancel(context.Background())
+	//
+	//go pss.startSendingShard(ctx)
 
 	return pss, nil
 }

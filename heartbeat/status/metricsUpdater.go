@@ -52,9 +52,10 @@ func NewMetricsUpdater(args ArgsMetricsUpdater) (*metricsUpdater, error) {
 
 	args.PeerAuthenticationCacher.RegisterHandler(updater.onAddedPeerAuthenticationMessage, "metricsUpdater")
 
-	var ctx context.Context
-	ctx, updater.cancelFunc = context.WithCancel(context.Background())
-	go updater.processMetricsUpdate(ctx)
+	// JLS: 2024.11.05: do not start metrics updater
+	//var ctx context.Context
+	_, updater.cancelFunc = context.WithCancel(context.Background())
+	//go updater.processMetricsUpdate(ctx)
 
 	return updater, nil
 }
