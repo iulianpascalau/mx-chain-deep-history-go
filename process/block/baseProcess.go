@@ -116,7 +116,7 @@ type baseProcessor struct {
 	gasConsumedProvider           gasConsumedProvider
 	economicsData                 process.EconomicsDataHandler
 	epochChangeGracePeriodHandler common.EpochChangeGracePeriodHandler
-	stateAccessesCollector 		  state.StateAccessesCollector
+	stateAccessesCollector        state.StateAccessesCollector
 
 	processDataTriesOnCommitEpoch bool
 	lastRestartNonce              uint64
@@ -952,6 +952,10 @@ func (bp *baseProcessor) checkHeaderBodyCorrelation(miniBlockHeaders []data.Mini
 		return process.ErrHeaderBodyMismatch
 	}
 
+	if len(mbHashesFromHdr) != len(miniBlockHeaders) {
+		return process.ErrDuplicatedHashInBlock
+	}
+
 	for i := 0; i < len(body.MiniBlocks); i++ {
 		miniBlock := body.MiniBlocks[i]
 		if miniBlock == nil {
@@ -963,7 +967,8 @@ func (bp *baseProcessor) checkHeaderBodyCorrelation(miniBlockHeaders []data.Mini
 			return err
 		}
 
-		mbHdr, ok := mbHashesFromHdr[string(mbHash)]
+		mbHashStr := string(mbHash)
+		mbHdr, ok := mbHashesFromHdr[mbHashStr]
 		if !ok {
 			return process.ErrHeaderBodyMismatch
 		}
@@ -980,6 +985,10 @@ func (bp *baseProcessor) checkHeaderBodyCorrelation(miniBlockHeaders []data.Mini
 			return process.ErrHeaderBodyMismatch
 		}
 
+		if mbHdr.GetTypeInt32() != int32(miniBlock.Type) {
+			return process.ErrHeaderBodyMismatch
+		}
+
 		err = process.CheckIfIndexesAreOutOfBound(mbHdr.GetIndexOfFirstTxProcessed(), mbHdr.GetIndexOfLastTxProcessed(), miniBlock)
 		if err != nil {
 			return err
@@ -989,6 +998,8 @@ func (bp *baseProcessor) checkHeaderBodyCorrelation(miniBlockHeaders []data.Mini
 		if err != nil {
 			return err
 		}
+
+		delete(mbHashesFromHdr, mbHashStr)
 	}
 
 	return nil
@@ -1410,7 +1421,7 @@ func (bp *baseProcessor) getLastSelfNotarizedHeadersForShard(shardID uint32) *bo
 	}
 
 	headerInfo := &bootstrapStorage.BootstrapHeaderInfo{
-		ShardId: lastSelfNotarizedHeader.GetShardID(),
+		ShardId: shardID,
 		Nonce:   lastSelfNotarizedHeader.GetNonce(),
 		Hash:    lastSelfNotarizedHeaderHash,
 	}
@@ -2243,23 +2254,28 @@ func gasAndFeesDelta(initialGasAndFees, finalGasAndFees scheduled.GasAndFees) sc
 	}
 }
 
-func (bp *baseProcessor) getIndexOfFirstMiniBlockToBeExecuted(header data.HeaderHandler) int {
+func (bp *baseProcessor) getIndexOfFirstMiniBlockToBeExecuted(header data.HeaderHandler) (int, error) {
 	if !bp.enableEpochsHandler.IsFlagEnabled(common.ScheduledMiniBlocksFlag) {
-		return 0
+		return 0, nil
 	}
 
 	for index, miniBlockHeaderHandler := range header.GetMiniBlockHeaderHandlers() {
 		if miniBlockHeaderHandler.GetProcessingType() == int32(block.Processed) {
+			if !bp.scheduledTxsExecutionHandler.IsMiniBlockExecuted(miniBlockHeaderHandler.GetHash()) {
+				return 0, fmt.Errorf("%w: mini block %s not executed",
+					process.ErrMiniBlockNotExecuted,
+					hex.EncodeToString(miniBlockHeaderHandler.GetHash()))
+			}
 			log.Debug("baseProcessor.getIndexOfFirstMiniBlockToBeExecuted: mini block is already executed",
 				"mb hash", miniBlockHeaderHandler.GetHash(),
 				"mb index", index)
 			continue
 		}
 
-		return index
+		return index, nil
 	}
 
-	return len(header.GetMiniBlockHeaderHandlers())
+	return len(header.GetMiniBlockHeaderHandlers()), nil
 }
 
 func displayCleanupErrorMessage(message string, shardID uint32, noncesToPrevFinal uint64, err error) {
